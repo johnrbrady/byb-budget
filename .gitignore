@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.local
+.vscode/
+data/
+
+# Scratch / draft files (not part of the deployable app)
+BudgetApp-review.md
+BudgetApp-revised.jsx
+/BudgetApp.jsx
+convert-history.js
+history-import.xlsx
+schema.md
+wireframe.md
+claude.md
+BudgetApp.test.jsx
+test-summary.md
+babel.config.json
+jest.config.js
+jest.setup.js
