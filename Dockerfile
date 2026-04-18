@@ -18,10 +18,6 @@ RUN npm ci --omit=dev
 COPY server.js ./
 COPY --from=build /app/dist ./dist
 
-# Create non-root user
-RUN addgroup -S byb && adduser -S byb -G byb
-USER byb
-
 # Data volume — mount a TrueNAS dataset here for persistence
 VOLUME /data
 ENV BYB_DATA_DIR=/data
