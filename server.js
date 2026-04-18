@@ -69,7 +69,14 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(
     DATA_FILE,
-    JSON.stringify({ transactions: [], categories: [], recurring: [], users: [], assets: [], transfers: [] }, null, 2)
+    JSON.stringify({
+      transactions: [],
+      categories: [],
+      recurring: [],
+      users: [{ id: "u-user1", name: "User 1", role: "owner", colour: "#7FB069" }],
+      assets: [],
+      transfers: [],
+    }, null, 2)
   );
 }
 if (!fs.existsSync(PASSWORDS_FILE)) fs.writeFileSync(PASSWORDS_FILE, JSON.stringify({}, null, 2));
