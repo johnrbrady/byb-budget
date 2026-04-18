@@ -33,6 +33,7 @@ app.use(
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
+        upgradeInsecureRequests: null, // must be null to remove — app runs on plain HTTP
       },
     },
     crossOriginEmbedderPolicy: false, // allow loading local assets
