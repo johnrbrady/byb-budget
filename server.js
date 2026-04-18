@@ -36,6 +36,8 @@ app.use(
       },
     },
     crossOriginEmbedderPolicy: false, // allow loading local assets
+    strictTransportSecurity: false,   // no HSTS — HTTPS is handled upstream (Tailscale/reverse proxy)
+    crossOriginOpenerPolicy: false,   // avoid COOP issues on plain HTTP
   })
 );
 
