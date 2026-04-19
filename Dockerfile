@@ -8,6 +8,9 @@ RUN npm run build
 
 # ── Stage 2: Production image ───────────────────────────────────────────────
 FROM node:20-alpine
+LABEL org.opencontainers.image.title="BYB! Budget"
+LABEL org.opencontainers.image.description="Ban Yuh Belly Budgeting - personal household budget manager"
+LABEL org.opencontainers.image.icon="https://raw.githubusercontent.com/johnrbrady/byb-budget/main/public/logo.png"
 WORKDIR /app
 
 # Only install production dependencies

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 function useIsMobile(breakpoint = 768) {
   const query = `(max-width: ${breakpoint - 1}px)`;
@@ -284,7 +284,7 @@ function Header({ view, activeMonth, setActiveMonth, availableMonths, users, act
   );
 }
 
-function Dashboard({ activeMonth, transactions, categories, usersById, categoriesById, recurring, styles, unallocatedBalance, onTransferEnvelope, onFillWithIncome, onAddTx, activeUserId, txFormOpen, setTxFormOpen, setEditingTx, onReconcile }) {
+function Dashboard({ activeMonth, transactions, categories, usersById, categoriesById, recurring, styles, unallocatedBalance, onTransferEnvelope, onFillWithIncome, onAddTx, activeUserId, txFormOpen, setTxFormOpen, setEditingTx, onReconcile, onNavigateToCategory }) {
   const mobile = styles.isMobile;
   const expenseCats = categories.filter((c) => c.type === "expense");
   const incomeCats = categories.filter((c) => c.type === "income");
@@ -401,7 +401,10 @@ function Dashboard({ activeMonth, transactions, categories, usersById, categorie
           const balColour = balance < 0 ? "#DC2626" : balance < base * 0.2 ? PALETTE.warn : PALETTE.primaryDeep;
           const fillAmt = c.isAccumulating ? base : Math.max(0, base - balance);
           return (
-            <div key={c.id} style={{ padding: mobile ? "10px 14px" : "12px 20px", borderBottom: `1px solid ${styles.border}` }}>
+            <div key={c.id}
+              style={{ padding: mobile ? "10px 14px" : "12px 20px", borderBottom: `1px solid ${styles.border}`, cursor: onNavigateToCategory ? "pointer" : "default" }}
+              onClick={() => onNavigateToCategory && onNavigateToCategory(c.id)}
+            >
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.colour, flexShrink: 0 }} />
                 <span style={{ fontWeight: 600, flex: 1 }}>{c.name}</span>
@@ -414,16 +417,9 @@ function Dashboard({ activeMonth, transactions, categories, usersById, categorie
                   <div style={{ width: `${Math.min(100, Math.max(0, (balance / base) * 100))}%`, height: "100%", background: balColour, borderRadius: 3, transition: "width .3s" }} />
                 </div>
               )}
-              <div style={{ fontSize: 11, color: styles.textMuted, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: styles.textMuted }}>
                 Spent <strong style={{ color: styles.text }}>{fmtAUD(spent)}</strong> this month
               </div>
-              {base > 0 && !c.isAccumulating && balance < base && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <button style={{ ...styles.button, fontSize: 12, padding: "6px 10px" }} onClick={() => openFillSingle(c.id)}>
-                    Fill to {fmtAUD(base)}
-                  </button>
-                </div>
-              )}
             </div>
           );
         })}
@@ -615,7 +611,7 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
               const cat = categoriesById[t.categoryId];
               const u = usersById[t.addedBy];
               return (
-                <div key={t.id} style={styles.txCard} data-testid={`tx-row-${t.id}`} onClick={() => openEdit(t)}>
+                <div key={t.id} style={{ ...styles.txCard, background: t.imported ? (styles.dark ? "#122012" : "#ECF4E8") : styles.txCard.background, borderLeft: t.imported ? `3px solid ${PALETTE.primary}` : undefined }} data-testid={`tx-row-${t.id}`} onClick={() => openEdit(t)}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                     <span style={styles.pill(cat?.colour || "#999")}>{cat?.name || "?"}</span>
                     <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 16, color: t.type === "income" ? PALETTE.primaryDeep : styles.text }}>
@@ -659,12 +655,13 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
                 const cat = categoriesById[t.categoryId];
                 const u = usersById[t.addedBy];
                 return (
-                  <tr key={t.id} data-testid={`tx-row-${t.id}`}>
+                  <tr key={t.id} data-testid={`tx-row-${t.id}`} style={{ background: t.imported ? (styles.dark ? "#122012" : "#ECF4E8") : "transparent" }}>
                     <td style={styles.td}>{t.date}</td>
                     <td style={styles.td}><span style={styles.pill(cat?.colour || "#999")}>{cat?.name || "?"}</span></td>
                     <td style={styles.td}>
                       {t.description}
                       {t.isRecurring && <span style={{ marginLeft: 6, fontSize: 10, color: styles.textMuted }}>· recurring</span>}
+                      {t.imported && <span style={{ marginLeft: 6, fontSize: 10, color: PALETTE.primaryDeep, fontWeight: 600 }}>· imported</span>}
                     </td>
                     <td style={styles.td}><span style={{ ...styles.avatarCircle(u || { colour: "#999", name: "?" }), width: 22, height: 22, fontSize: 10 }}>{u?.name[0] || "?"}</span></td>
                     <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: t.type === "income" ? PALETTE.primaryDeep : styles.text }}>
@@ -699,7 +696,7 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
   );
 }
 
-function CatForm({ cat, onSave, onCancel, styles }) {
+function CatForm({ cat, onSave, onCancel, onDelete, styles }) {
   const [form, setForm] = useState(cat
     ? { ...cat, baseAmount: cat.baseAmount ?? cat.monthlyBudget ?? "" }
     : { name: "", type: "expense", colour: "#7FB069", baseAmount: "", isAccumulating: false, envelopeBalance: 0 }
@@ -749,18 +746,81 @@ function CatForm({ cat, onSave, onCancel, styles }) {
           </div>
         </>
       )}
-      <div style={{ gridColumn: mobile ? "span 2" : "span 3", display: "flex", gap: 8, alignItems: "flex-end" }}>
+      <div style={{ gridColumn: mobile ? "span 2" : "span 3", display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
         <button type="submit" style={{ ...styles.button, flex: mobile ? 1 : "none" }}>Save</button>
         <button type="button" style={{ ...styles.buttonGhost, flex: mobile ? 1 : "none" }} onClick={onCancel}>Cancel</button>
+        {onDelete && !cat?.protected && (
+          <button type="button" style={{ ...styles.buttonDanger, marginLeft: "auto" }} onClick={onDelete}>Delete envelope</button>
+        )}
       </div>
     </form>
   );
 }
 
-function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, setCatFormOpen, saveCat, deleteCat, unallocatedBalance, onFillWithIncome, onSetupBaseAmounts, recurring, styles }) {
+function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, setCatFormOpen, saveCat, deleteCat, unallocatedBalance, onFillWithIncome, onSetupBaseAmounts, recurring, onReorderCats, styles }) {
   const mobile = styles.isMobile;
   const incomeCats = categories.filter((c) => c.type === "income");
-  const expenseCats = categories.filter((c) => c.type === "expense");
+  const rawExpenseCats = categories.filter((c) => c.type === "expense");
+  const expenseCats = [...rawExpenseCats].sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999));
+
+  // Drag-to-reorder state
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const touchDragRef = useRef(null);
+
+  const doReorder = (fromId, toId) => {
+    if (!fromId || !toId || fromId === toId || !onReorderCats) return;
+    const list = [...expenseCats];
+    const fromIdx = list.findIndex((c) => c.id === fromId);
+    const toIdx = list.findIndex((c) => c.id === toId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const reordered = [...list];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    const newCats = categories.map((c) => {
+      const newIdx = reordered.findIndex((x) => x.id === c.id);
+      return newIdx !== -1 ? { ...c, sortOrder: newIdx } : c;
+    });
+    onReorderCats(newCats);
+  };
+
+  // Desktop drag handlers
+  const handleDragStart = (e, id) => { setDragId(id); e.dataTransfer.effectAllowed = "move"; };
+  const handleDragOver = (e, id) => { e.preventDefault(); if (id !== dragId) setDragOverId(id); };
+  const handleDrop = (e, id) => { e.preventDefault(); doReorder(dragId, id); setDragId(null); setDragOverId(null); };
+  const handleDragEnd = () => { setDragId(null); setDragOverId(null); };
+
+  // Mobile long-press drag handlers
+  const handleTouchStart = (e, id) => {
+    const touch = e.touches[0];
+    const timer = setTimeout(() => {
+      if (touchDragRef.current?.id === id) {
+        touchDragRef.current.dragging = true;
+        setDragId(id);
+        if (navigator.vibrate) navigator.vibrate(30);
+      }
+    }, 500);
+    touchDragRef.current = { id, startX: touch.clientX, startY: touch.clientY, dragging: false, timer };
+  };
+  const handleTouchMove = (e, id) => {
+    const ref = touchDragRef.current;
+    if (!ref || ref.id !== id) return;
+    const touch = e.touches[0];
+    const moved = Math.abs(touch.clientX - ref.startX) > 8 || Math.abs(touch.clientY - ref.startY) > 8;
+    if (moved && !ref.dragging) { clearTimeout(ref.timer); touchDragRef.current = null; return; }
+    if (!ref.dragging) return;
+    e.preventDefault();
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const target = el?.closest("[data-env-id]");
+    if (target) { const overId = target.dataset.envId; if (overId !== ref.id) setDragOverId(overId); }
+  };
+  const handleTouchEnd = (id) => {
+    const ref = touchDragRef.current;
+    if (!ref || ref.id !== id) return;
+    clearTimeout(ref.timer);
+    if (ref.dragging && dragOverId && dragOverId !== dragId) doReorder(dragId, dragOverId);
+    setDragId(null); setDragOverId(null); touchDragRef.current = null;
+  };
   const totalBase = expenseCats.reduce((s, c) => s + (c.baseAmount || 0), 0);
   const totalBalance = expenseCats.reduce((s, c) => s + (c.envelopeBalance || 0), 0);
   const isFirstTimeSetup = expenseCats.every((c) => (c.baseAmount || 0) === 0);
@@ -909,15 +969,33 @@ function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, set
         {expenseCats.map((c) => {
           if (editingCat?.id === c.id) return (
             <div key={c.id}>
-              <CatForm cat={editingCat} onSave={saveCat} onCancel={() => setEditingCat(null)} styles={styles} />
+              <CatForm
+                cat={editingCat}
+                onSave={saveCat}
+                onCancel={() => setEditingCat(null)}
+                onDelete={!editingCat.protected ? () => { setEditingCat(null); deleteCat(editingCat.id); } : undefined}
+                styles={styles}
+              />
             </div>
           );
           const balance = c.envelopeBalance || 0;
           const base = c.baseAmount || 0;
           const balColour = balance < 0 ? "#DC2626" : balance < base * 0.2 ? PALETTE.warn : PALETTE.primaryDeep;
           return (
-            <div key={c.id} style={{ ...styles.card, display: "flex", flexDirection: "column" }}>
+            <div key={c.id}
+              data-env-id={c.id}
+              draggable={!editingCat}
+              onDragStart={(e) => handleDragStart(e, c.id)}
+              onDragOver={(e) => handleDragOver(e, c.id)}
+              onDrop={(e) => handleDrop(e, c.id)}
+              onDragEnd={handleDragEnd}
+              onTouchStart={(e) => handleTouchStart(e, c.id)}
+              onTouchMove={(e) => handleTouchMove(e, c.id)}
+              onTouchEnd={() => handleTouchEnd(c.id)}
+              style={{ ...styles.card, display: "flex", flexDirection: "column", opacity: dragId === c.id ? 0.45 : 1, outline: dragOverId === c.id ? `2px solid ${PALETTE.primary}` : "none", transition: "opacity .15s", cursor: dragId ? "grabbing" : "grab" }}
+            >
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 13, color: styles.textMuted, flexShrink: 0, cursor: "grab", userSelect: "none" }}>⠿</span>
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: c.colour, flexShrink: 0 }} />
                 <span style={{ fontWeight: 600, flex: 1 }}>{c.name}</span>
                 {c.isAccumulating && <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 99, background: PALETTE.secondary + "55", color: PALETTE.primaryDeep, fontWeight: 700 }}>Saving</span>}
@@ -927,9 +1005,8 @@ function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, set
               <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 10 }}>
                 Fill {fmtAUD(base)}/mo{c.isAccumulating ? " · accumulating" : ""}
               </div>
-              <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
-                <button style={{ ...styles.buttonGhost, fontSize: 12, padding: "6px 12px" }} onClick={() => { setEditingCat(c); setCatFormOpen(false); }}>Edit</button>
-                {!c.protected && <button style={{ ...styles.buttonDanger, fontSize: 12, padding: "6px 12px" }} onClick={() => deleteCat(c.id)}>Delete</button>}
+              <div style={{ marginTop: "auto" }}>
+                <button style={{ ...styles.buttonGhost, fontSize: 12, padding: "6px 12px", width: "100%" }} onClick={() => { setEditingCat(c); setCatFormOpen(false); }}>Edit</button>
               </div>
             </div>
           );
@@ -1141,8 +1218,8 @@ function ReportsView({ transactions, categories, categoriesById, reportRange, se
   const [importCopied, setImportCopied] = useState(false);
 
   const expenseCatList = categories.filter((c) => c.type === "expense");
-  const aiPrompt = `Convert my bank statement/transactions to JSON format for the BYB! budget app.
-Return ONLY a valid JSON array — no explanation, no markdown, just raw JSON.
+  const aiPrompt = `Convert my bank statement transactions to JSON format for the BYB budget app.
+Return ONLY a valid JSON array - no explanation, no markdown, just raw JSON.
 
 Each item must follow this exact structure:
 [
@@ -1156,19 +1233,40 @@ Each item must follow this exact structure:
 ]
 
 Rules:
-- "type" is "expense" for money paid out, "income" for money received
-- "amount" is always a positive number
-- "date" must be YYYY-MM-DD format
-- Choose the best "categoryId" from this list:
+- type is expense for money paid out, income for money received
+- amount is always a positive number
+- date must be YYYY-MM-DD format
+- description should be plain text with no special characters or apostrophes
+- Choose the best categoryId from this list:
 ${expenseCatList.map((c) => `  "${c.id}": ${c.name}`).join("\n")}
   "c-salary": Salary (for income)
   "c-other-in": Other Income (for income)
 
-My transactions / bank statement:
+My transactions and bank statement:
 [PASTE YOUR BANK STATEMENT HERE]`;
 
   const copyPrompt = () => {
-    navigator.clipboard?.writeText(aiPrompt).then(() => { setImportCopied(true); setTimeout(() => setImportCopied(false), 2000); });
+    const doFallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = aiPrompt;
+        ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setImportCopied(true);
+        setTimeout(() => setImportCopied(false), 2000);
+      } catch { /* silent */ }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(aiPrompt)
+        .then(() => { setImportCopied(true); setTimeout(() => setImportCopied(false), 2000); })
+        .catch(doFallback);
+    } else {
+      doFallback();
+    }
   };
 
   const runImport = () => {
@@ -1271,10 +1369,10 @@ My transactions / bank statement:
       </div>
 
       {styles.isMobile ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: importOpen ? 0 : 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div><div style={styles.label}>From</div><input style={styles.input} type="date" value={reportRange.start} onChange={(e) => setReportRange({ ...reportRange, start: e.target.value })} /></div>
-            <div><div style={styles.label}>To</div><input style={styles.input} type="date" value={reportRange.end} onChange={(e) => setReportRange({ ...reportRange, end: e.target.value })} /></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: importOpen ? 0 : 16, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, overflow: "hidden" }}>
+            <div style={{ minWidth: 0 }}><div style={styles.label}>From</div><input style={{ ...styles.input, minWidth: 0 }} type="date" value={reportRange.start} onChange={(e) => setReportRange({ ...reportRange, start: e.target.value })} /></div>
+            <div style={{ minWidth: 0 }}><div style={styles.label}>To</div><input style={{ ...styles.input, minWidth: 0 }} type="date" value={reportRange.end} onChange={(e) => setReportRange({ ...reportRange, end: e.target.value })} /></div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <button style={{ ...styles.buttonGhost, textAlign: "center" }} onClick={() => { setImportOpen((o) => !o); setImportText(""); }}>
@@ -1713,7 +1811,7 @@ function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) {
   }
 }
 
-function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTheme, activeUserId, onShowWelcome, onClose, styles }) {
+function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTheme, activeUserId, onShowWelcome, onResetBalances, onClose, styles }) {
   const [nameVal, setNameVal] = useState(user?.name || "");
   const [nameLoading, setNameLoading] = useState(false);
   const [nameMsg, setNameMsg] = useState("");
@@ -1895,6 +1993,23 @@ function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTh
             {addUserMsg && <div style={{ fontSize: 12, color: msgOk(addUserMsg) ? PALETTE.primaryDeep : "#DC2626", marginTop: 5 }}>{addUserMsg}</div>}
           </>
         )}
+
+        {/* Danger zone */}
+        <div style={{ ...sectionTitle, color: PALETTE.warn, borderColor: PALETTE.warn + "55" }}>Danger zone</div>
+        <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 10 }}>
+          Reset all envelope and unallocated balances to zero. Transactions and history are not affected.
+        </div>
+        <button
+          style={{ ...styles.buttonDanger, width: "100%", padding: "12px 14px", fontSize: 13, fontWeight: 600 }}
+          onClick={() => {
+            if (window.confirm("Reset ALL balances to zero?\n\nThis will clear every envelope balance and your unallocated amount. Your transaction history will not be affected. This cannot be undone.")) {
+              onResetBalances();
+              onClose();
+            }
+          }}
+        >
+          Reset all balances to zero
+        </button>
       </div>
     </div>
   );
@@ -2113,6 +2228,23 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
 
   const updateTheme = (t) => { setTheme(t); localStorage.setItem("byb_theme", t); };
   const styles = buildStyles(theme, isMobile);
+
+  // Close all open forms when switching tabs
+  const handleSetView = (v) => {
+    setView(v);
+    setEditingTx(null);
+    setTxFormOpen(false);
+    setEditingCat(null);
+    setCatFormOpen(false);
+    setEditingRule(null);
+    setRuleFormOpen(false);
+  };
+
+  // Navigate to Transactions tab filtered by category
+  const navigateToCategory = (catId) => {
+    setTxFilters({ type: "all", categoryId: catId, addedBy: "all", search: "" });
+    handleSetView("transactions");
+  };
   const categoriesById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const usersById = Object.fromEntries(users.map((u) => [u.id, u]));
 
@@ -2411,6 +2543,19 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     showToast(msg);
   };
 
+  const resetAllBalances = () => {
+    const newCats = categories.map((c) => ({ ...c, envelopeBalance: 0 }));
+    setCategories(newCats);
+    setUnallocatedBalance(0);
+    persist({ categories: newCats, unallocatedBalance: 0 });
+    showToast("All balances reset to zero");
+  };
+
+  const reorderCategories = (newCats) => {
+    setCategories(newCats);
+    persist({ categories: newCats });
+  };
+
   const setUnallocatedManually = (amount) => {
     setUnallocatedBalance(amount);
     persist({ unallocatedBalance: amount });
@@ -2439,6 +2584,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       persist({ transactions: newTx, recurring: newRecurring, categories: newCats });
       showToast(`Deleted "${cat.name}" · ${total} item(s) moved to Incidentals`);
     } else {
+      if (!window.confirm(`Delete "${cat.name}"? This cannot be undone.`)) return;
       const newCats = categories.filter((c) => c.id !== id);
       setCategories(newCats);
       persist({ categories: newCats });
@@ -2533,6 +2679,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           description: t.description || "",
           isRecurring: false,
           recurringId: null,
+          imported: true,
           addedBy: t.addedBy || activeUserId,
           createdAt: t.createdAt || new Date().toISOString(),
         }))
@@ -2597,7 +2744,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
 
   return (
     <div style={styles.app}>
-      <Sidebar view={view} setView={setView} dueCount={dueCount} styles={styles} />
+      <Sidebar view={view} setView={handleSetView} dueCount={dueCount} styles={styles} />
       <div style={styles.main}>
         <Header
           view={view}
@@ -2629,6 +2776,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
               setTxFormOpen={setTxFormOpen}
               setEditingTx={setEditingTx}
               onReconcile={reconcileEnvelopes}
+              onNavigateToCategory={navigateToCategory}
             />
           )}
           {view === "transactions" && (
@@ -2667,6 +2815,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
               onFillWithIncome={fillAllWithMultipleIncome}
               onSetupBaseAmounts={setupBaseAmounts}
               recurring={recurring}
+              onReorderCats={reorderCategories}
               styles={styles}
             />
           )}
@@ -2723,6 +2872,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           setTheme={updateTheme}
           activeUserId={activeUserId}
           onShowWelcome={() => { setSettingsOpen(false); setWelcomeOpen(true); }}
+          onResetBalances={resetAllBalances}
           onClose={() => setSettingsOpen(false)}
           styles={styles}
         />
