@@ -2040,6 +2040,9 @@ function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTh
           Reset all balances to zero
         </button>
       </div>
+      <div style={{ marginTop: 32, textAlign: "center", color: PALETTE.textMuted, fontSize: 11 }}>
+        Built {new Date(__BUILD_TIME__).toLocaleString()}
+      </div>
     </div>
   );
 }
