@@ -1936,10 +1936,11 @@ function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTh
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: mobile ? "flex-end" : "center", justifyContent: "center", padding: mobile ? 0 : 16 }} onClick={onClose}>
       <div style={{ background: styles.surface, borderRadius: mobile ? "16px 16px 0 0" : 16, width: "100%", maxWidth: 480, maxHeight: mobile ? "92vh" : "88vh", overflow: "auto", padding: mobile ? "20px 16px 32px" : 28, boxSizing: "border-box", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }} onClick={(e) => e.stopPropagation()}>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
           <div style={{ fontWeight: 700, fontSize: 18 }}>Settings</div>
           <button style={{ ...styles.buttonGhost, padding: "6px 14px", fontSize: 13 }} onClick={onClose}>✕ Close</button>
         </div>
+        <div style={{ fontSize: 10, color: styles.textMuted, marginBottom: 10 }}>Built {new Date(__BUILD_TIME__).toLocaleString()}</div>
 
         {/* About */}
         <div style={sectionTitle}>About BYB!</div>
@@ -2039,9 +2040,6 @@ function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTh
         >
           Reset all balances to zero
         </button>
-      </div>
-      <div style={{ marginTop: 32, textAlign: "center", color: PALETTE.textMuted, fontSize: 11 }}>
-        Built {new Date(__BUILD_TIME__).toLocaleString()}
       </div>
     </div>
   );
