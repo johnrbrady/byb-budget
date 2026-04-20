@@ -6,6 +6,9 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
+  optimizeDeps: {
+    esbuildOptions: { target: "es2022" },
+  },
   build: {
     target: "es2022",
   },
