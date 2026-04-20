@@ -1,6 +1,6 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
-export function exportToXlsx({ transactions, categories, users, recurring }) {
+export async function exportToXlsx({ transactions, categories, users, recurring }) {
   const categoriesById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const usersById = Object.fromEntries(users.map((u) => [u.id, u]));
 
@@ -20,7 +20,6 @@ export function exportToXlsx({ transactions, categories, users, recurring }) {
 
   const income = transactions.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const expenses = transactions.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-
   const byCat = {};
   transactions.filter((t) => t.type === "expense").forEach((t) => {
     const name = categoriesById[t.categoryId]?.name || "Unknown";
@@ -28,7 +27,6 @@ export function exportToXlsx({ transactions, categories, users, recurring }) {
     byCat[name].total += t.amount;
     byCat[name].count += 1;
   });
-
   const summaryRows = [
     { metric: "Total income", value: income },
     { metric: "Total expenses", value: expenses },
@@ -38,23 +36,57 @@ export function exportToXlsx({ transactions, categories, users, recurring }) {
     { metric: "Recurring rule count", value: recurring.length },
     { metric: "Exported at", value: new Date().toISOString() },
     {},
-    { metric: "— Category breakdown (expenses) —" },
+    { metric: "Category breakdown (expenses)" },
     ...Object.entries(byCat).map(([name, v]) => ({ metric: name, value: v.total, count: v.count })),
   ];
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(txRows), "Transactions");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Summary");
+  const wb = new ExcelJS.Workbook();
 
-  const stamp = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `budget-${stamp}.xlsx`);
+  const txSheet = wb.addWorksheet("Transactions");
+  if (txRows.length > 0) {
+    txSheet.columns = Object.keys(txRows[0]).map((k) => ({ header: k, key: k }));
+    txSheet.addRows(txRows);
+  }
+
+  const sumSheet = wb.addWorksheet("Summary");
+  sumSheet.columns = [
+    { header: "metric", key: "metric" },
+    { header: "value", key: "value" },
+    { header: "count", key: "count" },
+  ];
+  sumSheet.addRows(summaryRows);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `budget-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export async function importFromXlsx(file, { categories, users }) {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
-  const sheetName = wb.SheetNames.includes("Transactions") ? "Transactions" : wb.SheetNames[0];
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+
+  const sheet = wb.getWorksheet("Transactions") || wb.worksheets[0];
+  if (!sheet) return { added: [], skipped: 0 };
+
+  // Read header row
+  const headers = {};
+  sheet.getRow(1).eachCell((cell, col) => { headers[col] = String(cell.value ?? ""); });
+
+  const rows = [];
+  sheet.eachRow((row, rowNum) => {
+    if (rowNum === 1) return;
+    const obj = {};
+    row.eachCell((cell, col) => { if (headers[col]) obj[headers[col]] = cell.value; });
+    rows.push(obj);
+  });
 
   const categoryByName = {};
   categories.forEach((c) => { categoryByName[c.name.toLowerCase()] = c.id; });
@@ -70,24 +102,21 @@ export async function importFromXlsx(file, { categories, users }) {
     const date = r.date || "";
     const amount = parseFloat(r.amount);
     const type = (r.type || "").toLowerCase();
-    if (!date || !amount || amount <= 0 || (type !== "income" && type !== "expense")) {
-      skipped += 1;
-      return;
-    }
+    if (!date || !amount || amount <= 0 || (type !== "income" && type !== "expense")) { skipped++; return; }
 
     let categoryId = r.categoryId;
     if (!categoryId || !categoryById.has(categoryId)) {
       const byName = r.categoryName ? categoryByName[String(r.categoryName).toLowerCase()] : null;
       if (byName) categoryId = byName;
     }
-    if (!categoryId || !categoryById.has(categoryId)) { skipped += 1; return; }
+    if (!categoryId || !categoryById.has(categoryId)) { skipped++; return; }
 
     let addedBy = r.addedBy;
     if (!addedBy || !userById.has(addedBy)) {
       const byName = r.addedByName ? userByName[String(r.addedByName).toLowerCase()] : null;
       if (byName) addedBy = byName;
     }
-    if (!addedBy || !userById.has(addedBy)) { skipped += 1; return; }
+    if (!addedBy || !userById.has(addedBy)) { skipped++; return; }
 
     added.push({
       id: r.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "id-" + Math.random().toString(36).slice(2, 10)),

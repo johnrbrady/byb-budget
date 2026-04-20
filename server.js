@@ -315,10 +315,17 @@ app.post("/api/data", requireAuth, (req, res) => {
 
 // ── Serve production build ──────────────────────────────────────────────────
 const DIST_DIR = path.join(__dirname, "dist");
+const spaLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
   // SPA fallback — must come after all API routes
-  app.get("*", (req, res) => {
+  app.get("*", spaLimiter, (req, res) => {
     res.sendFile(path.join(DIST_DIR, "index.html"));
   });
 }

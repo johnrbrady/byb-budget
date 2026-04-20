@@ -766,7 +766,10 @@ function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, set
   // Drag-to-reorder state
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const touchDragRef = useRef(null);
+  // Ref holds mutable drag state so document listeners avoid stale closures
+  const ds = useRef({ id: null, overId: null, startX: 0, startY: 0, timer: null, active: false });
+  // Keep a ref to doReorder so the document listener always calls the latest version
+  const doReorderRef = useRef(null);
 
   const doReorder = (fromId, toId) => {
     if (!fromId || !toId || fromId === toId || !onReorderCats) return;
@@ -783,6 +786,7 @@ function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, set
     });
     onReorderCats(newCats);
   };
+  doReorderRef.current = doReorder;
 
   // Desktop drag handlers
   const handleDragStart = (e, id) => { setDragId(id); e.dataTransfer.effectAllowed = "move"; };
@@ -790,36 +794,61 @@ function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, set
   const handleDrop = (e, id) => { e.preventDefault(); doReorder(dragId, id); setDragId(null); setDragOverId(null); };
   const handleDragEnd = () => { setDragId(null); setDragOverId(null); };
 
-  // Mobile long-press drag handlers
-  const handleTouchStart = (e, id) => {
-    const touch = e.touches[0];
-    const timer = setTimeout(() => {
-      if (touchDragRef.current?.id === id) {
-        touchDragRef.current.dragging = true;
-        setDragId(id);
-        if (navigator.vibrate) navigator.vibrate(30);
+  // Document-level non-passive touch listeners — added only while a drag is active.
+  // Non-passive allows e.preventDefault() to block scroll during drag.
+  useEffect(() => {
+    if (!dragId) return;
+    const onMove = (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const envEl = el?.closest("[data-env-id]");
+      if (envEl) {
+        const overId = envEl.dataset.envId;
+        if (overId !== ds.current.id && overId !== ds.current.overId) {
+          ds.current.overId = overId;
+          setDragOverId(overId);
+        }
       }
-    }, 500);
-    touchDragRef.current = { id, startX: touch.clientX, startY: touch.clientY, dragging: false, timer };
-  };
-  const handleTouchMove = (e, id) => {
-    const ref = touchDragRef.current;
-    if (!ref || ref.id !== id) return;
+    };
+    const onEnd = () => {
+      const { id, overId } = ds.current;
+      if (id && overId && id !== overId) doReorderRef.current(id, overId);
+      ds.current.active = false; ds.current.id = null; ds.current.overId = null;
+      setDragId(null); setDragOverId(null);
+    };
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd);
+    document.addEventListener("touchcancel", onEnd);
+    return () => {
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", onEnd);
+    };
+  }, [dragId]);
+
+  // Mobile: long-press to start drag
+  const handleTouchStart = (e, id) => {
+    if (editingCat) return;
     const touch = e.touches[0];
-    const moved = Math.abs(touch.clientX - ref.startX) > 8 || Math.abs(touch.clientY - ref.startY) > 8;
-    if (moved && !ref.dragging) { clearTimeout(ref.timer); touchDragRef.current = null; return; }
-    if (!ref.dragging) return;
-    e.preventDefault();
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    const target = el?.closest("[data-env-id]");
-    if (target) { const overId = target.dataset.envId; if (overId !== ref.id) setDragOverId(overId); }
+    ds.current.startX = touch.clientX; ds.current.startY = touch.clientY;
+    ds.current.id = id; ds.current.active = false; ds.current.overId = null;
+    ds.current.timer = setTimeout(() => {
+      ds.current.active = true;
+      setDragId(id);
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, 500);
   };
-  const handleTouchEnd = (id) => {
-    const ref = touchDragRef.current;
-    if (!ref || ref.id !== id) return;
-    clearTimeout(ref.timer);
-    if (ref.dragging && dragOverId && dragOverId !== dragId) doReorder(dragId, dragOverId);
-    setDragId(null); setDragOverId(null); touchDragRef.current = null;
+  // Cancel long-press if finger moves before 500ms (normal scroll)
+  const handleCardTouchMove = (e) => {
+    if (ds.current.active) return;
+    const touch = e.touches[0];
+    if (Math.abs(touch.clientX - ds.current.startX) > 8 || Math.abs(touch.clientY - ds.current.startY) > 8) {
+      clearTimeout(ds.current.timer); ds.current.id = null;
+    }
+  };
+  const handleCardTouchEnd = () => {
+    if (!ds.current.active) { clearTimeout(ds.current.timer); ds.current.id = null; }
   };
   const totalBase = expenseCats.reduce((s, c) => s + (c.baseAmount || 0), 0);
   const totalBalance = expenseCats.reduce((s, c) => s + (c.envelopeBalance || 0), 0);
@@ -990,8 +1019,8 @@ function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, set
               onDrop={(e) => handleDrop(e, c.id)}
               onDragEnd={handleDragEnd}
               onTouchStart={(e) => handleTouchStart(e, c.id)}
-              onTouchMove={(e) => handleTouchMove(e, c.id)}
-              onTouchEnd={() => handleTouchEnd(c.id)}
+              onTouchMove={handleCardTouchMove}
+              onTouchEnd={handleCardTouchEnd}
               style={{ ...styles.card, display: "flex", flexDirection: "column", opacity: dragId === c.id ? 0.45 : 1, outline: dragOverId === c.id ? `2px solid ${PALETTE.primary}` : "none", transition: "opacity .15s", cursor: dragId ? "grabbing" : "grab" }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
