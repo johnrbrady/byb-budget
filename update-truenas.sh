@@ -10,7 +10,7 @@ echo "Pulling latest image..."
 docker pull "$IMAGE"
 
 echo "Restarting containers..."
-for CONTAINER in byb-budget byb-trinidad byb-tex; do
+for CONTAINER in ix-byb-budget-byb-budget-1 ix-byb-trinidad-byb-trinidad-1 ix-byb-tex-byb-tex-1; do
   if docker ps -q -f name="^${CONTAINER}$" | grep -q .; then
     docker restart "$CONTAINER"
     echo "  ✓ $CONTAINER restarted"
