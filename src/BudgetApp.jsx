@@ -137,7 +137,7 @@ function buildStyles(theme, isMobile = false) {
   const bottomNavHeight = 64;
   return {
     dark, surface, surfaceAlt, text, textMuted, border, barTrack, isMobile,
-    app: { display: "flex", flexDirection: isMobile ? "column" : "row", minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif", background: surface, color: text, fontSize: 14, lineHeight: 1.5 },
+    app: { display: "flex", flexDirection: isMobile ? "column" : "row", minHeight: "100vh", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif", background: surface, color: text, fontSize: 15, lineHeight: 1.5 },
     sidebar: isMobile
       ? { position: "fixed", bottom: 0, left: 0, right: 0, height: bottomNavHeight, background: surfaceAlt, borderTop: `1px solid ${border}`, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "stretch", zIndex: 20, paddingBottom: "env(safe-area-inset-bottom, 0px)" }
       : { width: 220, background: surfaceAlt, borderRight: `1px solid ${border}`, padding: "24px 0", display: "flex", flexDirection: "column", gap: 4, flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto", alignSelf: "flex-start" },
@@ -169,20 +169,20 @@ function buildStyles(theme, isMobile = false) {
       : { padding: "12px 32px", borderTop: `1px solid ${border}`, fontSize: 12, color: textMuted, display: "flex", justifyContent: "space-between" },
     card: { background: surfaceAlt, border: `1px solid ${border}`, borderRadius: 10, padding: isMobile ? 14 : 20 },
     kpiGrid: { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 16 : 24 },
-    kpiValue: { fontSize: isMobile ? 20 : 26, fontWeight: 700, letterSpacing: -0.5, marginTop: 6 },
-    kpiLabel: { fontSize: 11, color: textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
-    sectionTitle: { fontSize: 13, fontWeight: 600, margin: isMobile ? "20px 0 10px 0" : "28px 0 12px 0", textTransform: "uppercase", letterSpacing: 0.6, color: textMuted },
-    button: { padding: isMobile ? "12px 18px" : "8px 16px", borderRadius: 6, border: "none", background: PALETTE.primary, color: "#FFF", fontWeight: 600, cursor: "pointer", fontSize: isMobile ? 14 : 13, minHeight: isMobile ? 44 : "auto" },
-    buttonGhost: { padding: isMobile ? "11px 14px" : "8px 14px", borderRadius: 6, border: `1px solid ${border}`, background: "transparent", color: text, cursor: "pointer", fontSize: isMobile ? 13 : 13, minHeight: isMobile ? 44 : "auto" },
-    buttonDanger: { padding: isMobile ? "10px 14px" : "6px 12px", borderRadius: 6, border: `1px solid ${PALETTE.warn}`, background: "transparent", color: PALETTE.warn, cursor: "pointer", fontSize: isMobile ? 13 : 12, minHeight: isMobile ? 40 : "auto" },
-    input: { padding: isMobile ? "11px 12px" : "8px 10px", borderRadius: 6, border: `1px solid ${border}`, background: surface, color: text, fontSize: isMobile ? 16 : 13, width: "100%", boxSizing: "border-box", minHeight: isMobile ? 44 : "auto" },
-    label: { fontSize: 11, fontWeight: 600, color: textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" },
-    table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
-    th: { textAlign: "left", padding: "10px 8px", borderBottom: `1px solid ${border}`, fontWeight: 600, color: textMuted, textTransform: "uppercase", fontSize: 11, letterSpacing: 0.5 },
+    kpiValue: { fontSize: isMobile ? 22 : 28, fontWeight: 700, letterSpacing: -0.5, marginTop: 6 },
+    kpiLabel: { fontSize: 12, color: textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
+    sectionTitle: { fontSize: 14, fontWeight: 600, margin: isMobile ? "20px 0 10px 0" : "28px 0 12px 0", textTransform: "uppercase", letterSpacing: 0.6, color: textMuted },
+    button: { padding: isMobile ? "12px 18px" : "8px 16px", borderRadius: 6, border: "none", background: PALETTE.primary, color: "#FFF", fontWeight: 600, cursor: "pointer", fontSize: isMobile ? 15 : 14, minHeight: isMobile ? 44 : "auto" },
+    buttonGhost: { padding: isMobile ? "11px 14px" : "8px 14px", borderRadius: 6, border: `1px solid ${border}`, background: "transparent", color: text, cursor: "pointer", fontSize: 14, minHeight: isMobile ? 44 : "auto" },
+    buttonDanger: { padding: isMobile ? "10px 14px" : "6px 12px", borderRadius: 6, border: `1px solid ${PALETTE.warn}`, background: "transparent", color: PALETTE.warn, cursor: "pointer", fontSize: isMobile ? 14 : 13, minHeight: isMobile ? 40 : "auto" },
+    input: { padding: isMobile ? "11px 12px" : "8px 10px", borderRadius: 6, border: `1px solid ${border}`, background: surface, color: text, fontSize: isMobile ? 16 : 14, width: "100%", boxSizing: "border-box", minHeight: isMobile ? 44 : "auto" },
+    label: { fontSize: 12, fontWeight: 600, color: textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" },
+    table: { width: "100%", borderCollapse: "collapse", fontSize: 14 },
+    th: { textAlign: "left", padding: "10px 8px", borderBottom: `1px solid ${border}`, fontWeight: 600, color: textMuted, textTransform: "uppercase", fontSize: 12, letterSpacing: 0.5 },
     td: { padding: "10px 8px", borderBottom: `1px solid ${border}`, verticalAlign: "middle" },
     pill: (colour) => ({ display: "inline-block", padding: "3px 10px", borderRadius: 999, background: colour + "22", color: colour, fontSize: 11, fontWeight: 600 }),
-    toast: { position: "fixed", bottom: isMobile ? bottomNavHeight + 16 : 24, left: "50%", transform: "translateX(-50%)", background: PALETTE.textLight, color: PALETTE.textDark, padding: "10px 18px", borderRadius: 6, fontSize: 13, zIndex: 100, boxShadow: "0 4px 16px rgba(0,0,0,0.16)" },
-    fab: { position: "fixed", right: 18, bottom: bottomNavHeight + 18, width: 56, height: 56, borderRadius: "50%", background: PALETTE.primary, color: "#FFF", border: "none", fontSize: 28, fontWeight: 400, cursor: "pointer", boxShadow: "0 6px 18px rgba(0,0,0,0.18)", zIndex: 15, display: "flex", alignItems: "center", justifyContent: "center", paddingBottom: 4 },
+    toast: { position: "fixed", bottom: isMobile ? bottomNavHeight + 16 : 24, left: "50%", transform: "translateX(-50%)", background: PALETTE.textLight, color: PALETTE.textDark, padding: "10px 18px", borderRadius: 6, fontSize: 14, zIndex: 100, boxShadow: "0 4px 16px rgba(0,0,0,0.16)" },
+    fab: { position: "fixed", right: 18, bottom: `calc(${bottomNavHeight + 18}px + env(safe-area-inset-bottom, 0px))`, width: 56, height: 56, borderRadius: "50%", background: PALETTE.primary, color: "#FFF", border: "none", fontSize: 28, fontWeight: 400, cursor: "pointer", boxShadow: "0 6px 18px rgba(0,0,0,0.18)", zIndex: 15, display: "flex", alignItems: "center", justifyContent: "center", paddingBottom: 4 },
     txCard: { background: surfaceAlt, border: `1px solid ${border}`, borderRadius: 10, padding: 12, marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 },
   };
 }
@@ -450,9 +450,20 @@ function Dashboard({ activeMonth, transactions, categories, usersById, categorie
   );
 }
 
-function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, styles }) {
+function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, styles, defaultCategoryId }) {
+  const defaultCat = defaultCategoryId ? categories.find((c) => c.id === defaultCategoryId) : null;
   const [form, setForm] = useState(
-    tx || { date: todayISO(), amount: "", type: "expense", categoryId: categories.find((c) => c.type === "expense")?.id || "", description: "", addedBy: activeUserId, fromCatId: "", toCatId: "" }
+    tx || {
+      date: todayISO(),
+      amount: "",
+      type: defaultCat?.type || "expense",
+      categoryId: defaultCategoryId || categories.find((c) => c.type === "expense")?.id || "",
+      description: "",
+      addedBy: activeUserId,
+      fromCatId: "",
+      toCatId: "",
+      allocatedEnvelopeId: "",
+    }
   );
   const expenseCats = categories.filter((c) => c.type === "expense");
   const submit = (e) => {
@@ -469,12 +480,14 @@ function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, st
   const catOptions = categories.filter((c) => c.type === form.type);
   const mobile = styles.isMobile;
   const isTransfer = form.type === "transfer";
+  const isIncome = form.type === "income";
+  const cols = mobile ? "1fr 1fr" : (isIncome && !isTransfer) ? "repeat(6, 1fr)" : "repeat(5, 1fr)";
   return (
-    <form onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: 10 }} data-testid="tx-form">
+    <form onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: cols, gap: 10 }} data-testid="tx-form">
       <div style={mobile ? { gridColumn: "span 2" } : {}}><div style={styles.label}>Date</div><input style={styles.input} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
       <div>
         <div style={styles.label}>Type</div>
-        <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, categoryId: categories.find((c) => c.type === e.target.value)?.id || "", fromCatId: "", toCatId: "" })}>
+        <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, categoryId: categories.find((c) => c.type === e.target.value)?.id || "", fromCatId: "", toCatId: "", allocatedEnvelopeId: "" })}>
           <option value="expense">Expense</option>
           <option value="income">Income</option>
           <option value="transfer">Transfer</option>
@@ -499,15 +512,26 @@ function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, st
           </div>
         </>
       ) : (
-        <div style={mobile ? { gridColumn: "span 2" } : {}}>
-          <div style={styles.label}>Category</div>
-          <select style={styles.input} value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} data-testid="tx-category">
-            {catOptions.map((c) => <option key={c.id} value={c.id}>{c.name}{c.type === "expense" ? ` — ${fmtAUD(c.envelopeBalance || 0)}` : ""}</option>)}
-          </select>
-        </div>
+        <>
+          <div style={mobile ? { gridColumn: "span 2" } : {}}>
+            <div style={styles.label}>Category</div>
+            <select style={styles.input} value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} data-testid="tx-category">
+              {catOptions.map((c) => <option key={c.id} value={c.id}>{c.name}{c.type === "expense" ? ` — ${fmtAUD(c.envelopeBalance || 0)}` : ""}</option>)}
+            </select>
+          </div>
+          {isIncome && (
+            <div style={mobile ? { gridColumn: "span 2" } : {}}>
+              <div style={styles.label}>Allocate to envelope</div>
+              <select style={styles.input} value={form.allocatedEnvelopeId || ""} onChange={(e) => setForm({ ...form, allocatedEnvelopeId: e.target.value })} data-testid="tx-allocate-envelope">
+                <option value="">— unallocated —</option>
+                {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+              </select>
+            </div>
+          )}
+        </>
       )}
       <div style={{ gridColumn: mobile ? "span 2" : "span 2" }}><div style={styles.label}>Description</div><input style={styles.input} value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="tx-description" /></div>
-      <div style={{ gridColumn: mobile ? "span 2" : "span 5", display: "flex", alignItems: "end", gap: 8 }}>
+      <div style={{ gridColumn: mobile ? "span 2" : `span ${isIncome ? 6 : 5}`, display: "flex", alignItems: "end", gap: 8 }}>
         <button type="submit" style={{ ...styles.button, flex: mobile ? 1 : "none" }} data-testid="tx-save">Save</button>
         <button type="button" style={{ ...styles.buttonGhost, flex: mobile ? 1 : "none" }} onClick={onCancel}>Cancel</button>
       </div>
@@ -515,7 +539,44 @@ function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, st
   );
 }
 
-function TransactionsView({ transactions, categories, users, categoriesById, usersById, activeMonth, activeUserId, txFilters, setTxFilters, editingTx, setEditingTx, txFormOpen, setTxFormOpen, saveTx, deleteTx, onTransferEnvelope, handleImportFile, handleExport, styles }) {
+function AddAmountForm({ categories, onSave, onCancel, styles }) {
+  const expenseCats = categories.filter((c) => c.type === "expense");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [catId, setCatId] = useState(expenseCats[0]?.id || "");
+  const mobile = styles.isMobile;
+  const submit = (e) => {
+    e.preventDefault();
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0 || !catId) return;
+    onSave(catId, amt, description);
+  };
+  return (
+    <form onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
+      style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "1fr 1fr 2fr auto auto", gap: 10, borderColor: PALETTE.primary, background: styles.dark ? "#1A2A1A" : "#EDF3E8" }}>
+      <div>
+        <div style={styles.label}>Amount ($)</div>
+        <input style={styles.input} type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} required />
+      </div>
+      <div>
+        <div style={styles.label}>Envelope</div>
+        <select style={styles.input} value={catId} onChange={(e) => setCatId(e.target.value)} required>
+          {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+        </select>
+      </div>
+      <div style={mobile ? { gridColumn: "span 2" } : {}}>
+        <div style={styles.label}>Description (optional)</div>
+        <input style={styles.input} placeholder="e.g. Found cash" value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, gridColumn: mobile ? "span 2" : "auto" }}>
+        <button type="submit" style={{ ...styles.button, whiteSpace: "nowrap" }}>Add Amount</button>
+        <button type="button" style={{ ...styles.buttonGhost, whiteSpace: "nowrap" }} onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+function TransactionsView({ transactions, categories, users, categoriesById, usersById, activeMonth, activeUserId, txFilters, setTxFilters, editingTx, setEditingTx, txFormOpen, setTxFormOpen, saveTx, deleteTx, onTransferEnvelope, handleImportFile, handleExport, onAddWindfall, styles }) {
   const filteredTx = transactions.filter((t) => {
     if (monthKey(t.date) !== activeMonth) return false;
     if (txFilters.type !== "all" && t.type !== txFilters.type) return false;
@@ -528,18 +589,54 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
   const filteredIncome = filteredTx.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const filteredExpense = filteredTx.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
 
-  const fileInputId = "import-input";
   const mobile = styles.isMobile;
   const [showFilters, setShowFilters] = useState(false);
+  const [addAmountOpen, setAddAmountOpen] = useState(false);
 
-  const openAddForm = () => { setEditingTx(null); setTxFormOpen(true); };
-  const openEdit = (t) => { setEditingTx(t); setTxFormOpen(false); };
+  const inEnvelopeView = txFilters.categoryId !== "all";
+  const contextCatId = inEnvelopeView ? txFilters.categoryId : null;
+
+  const openAddForm = () => { setAddAmountOpen(false); setEditingTx(null); setTxFormOpen(true); };
+  const openEdit = (t) => { setAddAmountOpen(false); setEditingTx(t); setTxFormOpen(false); };
+
+  // Auto-close form when clicking outside it
+  const formRef = useRef(null);
+  useEffect(() => {
+    if (!txFormOpen && !editingTx) return;
+    const handler = (e) => {
+      if (formRef.current && !formRef.current.contains(e.target)) {
+        setTxFormOpen(false);
+        setEditingTx(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [txFormOpen, editingTx]);
+
+  // Swipe-left to exit envelope view (when in individual envelope context)
+  const swipeRef = useRef({ startX: 0, startY: 0 });
+  const handleSwipeTouchStart = (e) => { swipeRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY }; };
+  const handleSwipeTouchEnd = (e) => {
+    if (!inEnvelopeView) return;
+    const dx = swipeRef.current.startX - e.changedTouches[0].clientX;
+    const dy = Math.abs(swipeRef.current.startY - e.changedTouches[0].clientY);
+    if (dx > 60 && dy < 40) {
+      setTxFilters((f) => ({ ...f, categoryId: "all" }));
+    }
+  };
 
   const filterBar = (
     <div style={{ display: mobile ? "grid" : "flex", gridTemplateColumns: mobile ? "1fr 1fr" : undefined, gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-      <select style={styles.input} value={txFilters.type} onChange={(e) => setTxFilters({ ...txFilters, type: e.target.value })}>
-        <option value="all">All types</option><option value="income">Income</option><option value="expense">Expense</option>
-      </select>
+      {/* Hide type filter when inside a specific envelope view — irrelevant there */}
+      {!inEnvelopeView && (
+        <select style={styles.input} value={txFilters.type} onChange={(e) => setTxFilters({ ...txFilters, type: e.target.value })}>
+          <option value="all">All types</option><option value="income">Income</option><option value="expense">Expense</option>
+        </select>
+      )}
       <select style={styles.input} value={txFilters.categoryId} onChange={(e) => setTxFilters({ ...txFilters, categoryId: e.target.value })}>
         <option value="all">All categories</option>
         {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -554,20 +651,34 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
   );
 
   return (
-    <div>
+    <div onTouchStart={handleSwipeTouchStart} onTouchEnd={handleSwipeTouchEnd}>
+      {/* Envelope context header with back hint */}
+      {inEnvelopeView && mobile && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 13, color: styles.textMuted }}>
+          <button style={{ ...styles.buttonGhost, padding: "6px 12px", fontSize: 13 }} onClick={() => setTxFilters((f) => ({ ...f, categoryId: "all" }))}>← All</button>
+          <span style={styles.pill(categoriesById[txFilters.categoryId]?.colour || "#999")}>{categoriesById[txFilters.categoryId]?.name || "Envelope"}</span>
+          <span style={{ fontSize: 12 }}>Swipe left to go back</span>
+        </div>
+      )}
       {mobile ? (
         <>
           <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
             <button style={{ ...styles.button, flex: 1, fontSize: 16, fontWeight: 700 }} onClick={openAddForm} data-testid="add-tx-mobile">+ Add</button>
-            <button style={{ ...styles.buttonGhost, flex: 1 }} onClick={() => setShowFilters((s) => !s)}>{showFilters ? "Hide filters" : "Filter"}</button>
+            <button style={{ ...styles.button, flex: 1, fontSize: 14, fontWeight: 600, background: styles.dark ? "#2A3A2A" : "#EDF3E8", color: PALETTE.primaryDeep, border: `1px solid ${PALETTE.primary}` }} onClick={() => { setTxFormOpen(false); setEditingTx(null); setAddAmountOpen((o) => !o); }}>
+              {addAmountOpen ? "✕ Cancel" : "+ Amount"}
+            </button>
+            <button style={{ ...styles.buttonGhost, flex: 1 }} onClick={() => setShowFilters((s) => !s)}>{showFilters ? "Hide" : "Filter"}</button>
           </div>
           {showFilters && filterBar}
         </>
       ) : (
         <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-          <select style={{ ...styles.input, minWidth: 130, width: "auto" }} value={txFilters.type} onChange={(e) => setTxFilters({ ...txFilters, type: e.target.value })}>
-            <option value="all">All types</option><option value="income">Income</option><option value="expense">Expense</option>
-          </select>
+          {/* Hide type filter when in envelope view */}
+          {!inEnvelopeView && (
+            <select style={{ ...styles.input, minWidth: 130, width: "auto" }} value={txFilters.type} onChange={(e) => setTxFilters({ ...txFilters, type: e.target.value })}>
+              <option value="all">All types</option><option value="income">Income</option><option value="expense">Expense</option>
+            </select>
+          )}
           <select style={{ ...styles.input, minWidth: 180, width: "auto" }} value={txFilters.categoryId} onChange={(e) => setTxFilters({ ...txFilters, categoryId: e.target.value })}>
             <option value="all">All categories</option>
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -579,26 +690,41 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
           <input style={{ ...styles.input, minWidth: 160, flex: 1 }} placeholder="Search description" value={txFilters.search} onChange={(e) => setTxFilters({ ...txFilters, search: e.target.value })} data-testid="tx-search" />
           <button style={styles.buttonGhost} onClick={() => setTxFilters({ type: "all", categoryId: "all", addedBy: "all", search: "" })}>Clear</button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <button style={{ ...styles.buttonGhost, borderColor: PALETTE.primary, color: PALETTE.primaryDeep }} onClick={() => { setTxFormOpen(false); setEditingTx(null); setAddAmountOpen((o) => !o); }}>
+              {addAmountOpen ? "✕ Cancel" : "+ Add Amount"}
+            </button>
             <button style={styles.button} onClick={openAddForm} data-testid="add-tx">Add transaction</button>
           </div>
         </div>
       )}
 
-      {(txFormOpen || editingTx) && (
-        <TxForm
-          tx={editingTx}
+      {addAmountOpen && (
+        <AddAmountForm
           categories={categories}
-          activeUserId={activeUserId}
-          onSave={saveTx}
-          onTransfer={(data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); setTxFormOpen(false); setEditingTx(null); }}
-          onCancel={() => { setTxFormOpen(false); setEditingTx(null); }}
+          onSave={(catId, amt, desc) => { onAddWindfall(catId, amt, desc); setAddAmountOpen(false); }}
+          onCancel={() => setAddAmountOpen(false)}
           styles={styles}
         />
       )}
 
+      {(txFormOpen || editingTx) && (
+        <div ref={formRef}>
+          <TxForm
+            tx={editingTx}
+            categories={categories}
+            activeUserId={activeUserId}
+            onSave={saveTx}
+            onTransfer={(data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); setTxFormOpen(false); setEditingTx(null); }}
+            onCancel={() => { setTxFormOpen(false); setEditingTx(null); }}
+            defaultCategoryId={!editingTx ? contextCatId : null}
+            styles={styles}
+          />
+        </div>
+      )}
+
       {mobile ? (
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: styles.textMuted, padding: "4px 2px 10px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: styles.textMuted, padding: "4px 2px 10px" }}>
             <span>{filteredTx.length} transaction{filteredTx.length === 1 ? "" : "s"}</span>
             <span>
               <span style={{ color: PALETTE.primaryDeep, fontWeight: 600 }} data-testid="filter-income">+{fmtAUD(filteredIncome)}</span>
@@ -619,11 +745,11 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
                     </span>
                   </div>
                   {t.description && <div style={{ fontSize: 14, color: styles.text }}>{t.description}</div>}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: styles.textMuted }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, color: styles.textMuted }}>
                     <span>{t.date}{t.isRecurring && " · recurring"}</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ ...styles.avatarCircle(u || { colour: "#999", name: "?" }), width: 20, height: 20, fontSize: 10 }}>{u?.name[0] || "?"}</span>
-                      <button style={{ ...styles.buttonDanger, padding: "4px 10px", fontSize: 11, minHeight: "auto" }} onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this transaction?")) deleteTx(t.id); }} data-testid={`tx-delete-${t.id}`}>Del</button>
+                      <button style={{ ...styles.buttonDanger, padding: "4px 10px", fontSize: 12, minHeight: "auto" }} onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this transaction?")) deleteTx(t.id); }} data-testid={`tx-delete-${t.id}`}>Del</button>
                     </span>
                   </div>
                 </div>
@@ -633,7 +759,7 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
               <div style={{ ...styles.card, textAlign: "center", color: styles.textMuted }}>No transactions match the current filter.</div>
             )}
           </div>
-          {!txFormOpen && !editingTx && (
+          {!txFormOpen && !editingTx && !addAmountOpen && (
             <button style={styles.fab} onClick={openAddForm} data-testid="add-tx" aria-label="Add transaction">+</button>
           )}
         </>
@@ -660,8 +786,8 @@ function TransactionsView({ transactions, categories, users, categoriesById, use
                     <td style={styles.td}><span style={styles.pill(cat?.colour || "#999")}>{cat?.name || "?"}</span></td>
                     <td style={styles.td}>
                       {t.description}
-                      {t.isRecurring && <span style={{ marginLeft: 6, fontSize: 10, color: styles.textMuted }}>· recurring</span>}
-                      {t.imported && <span style={{ marginLeft: 6, fontSize: 10, color: PALETTE.primaryDeep, fontWeight: 600 }}>· imported</span>}
+                      {t.isRecurring && <span style={{ marginLeft: 6, fontSize: 11, color: styles.textMuted }}>· recurring</span>}
+                      {t.imported && <span style={{ marginLeft: 6, fontSize: 11, color: PALETTE.primaryDeep, fontWeight: 600 }}>· imported</span>}
                     </td>
                     <td style={styles.td}><span style={{ ...styles.avatarCircle(u || { colour: "#999", name: "?" }), width: 22, height: 22, fontSize: 10 }}>{u?.name[0] || "?"}</span></td>
                     <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: t.type === "income" ? PALETTE.primaryDeep : styles.text }}>
@@ -757,7 +883,7 @@ function CatForm({ cat, onSave, onCancel, onDelete, styles }) {
   );
 }
 
-function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, setCatFormOpen, saveCat, deleteCat, unallocatedBalance, onFillWithIncome, onSetupBaseAmounts, recurring, onReorderCats, styles }) {
+function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, setCatFormOpen, saveCat, deleteCat, unallocatedBalance, onFillWithIncome, onFillSingleEnvelope, onSetupBaseAmounts, recurring, onReorderCats, styles }) {
   const mobile = styles.isMobile;
   const incomeCats = categories.filter((c) => c.type === "income");
   const rawExpenseCats = categories.filter((c) => c.type === "expense");
@@ -1034,8 +1160,11 @@ function EnvelopesView({ categories, editingCat, setEditingCat, catFormOpen, set
               <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 10 }}>
                 Fill {fmtAUD(base)}/mo{c.isAccumulating ? " · accumulating" : ""}
               </div>
-              <div style={{ marginTop: "auto" }}>
-                <button style={{ ...styles.buttonGhost, fontSize: 12, padding: "6px 12px", width: "100%" }} onClick={() => { setEditingCat(c); setCatFormOpen(false); }}>Edit</button>
+              <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
+                <button style={{ ...styles.buttonGhost, fontSize: 12, padding: "6px 12px", flex: 1 }} onClick={(e) => { e.stopPropagation(); setEditingCat(c); setCatFormOpen(false); }}>Edit</button>
+                {onFillSingleEnvelope && (c.baseAmount || 0) > 0 && (
+                  <button style={{ ...styles.button, fontSize: 12, padding: "6px 12px", flex: 1 }} onClick={(e) => { e.stopPropagation(); onFillSingleEnvelope(c.id); }} title={`Fill ${c.name} to target`}>Fill</button>
+                )}
               </div>
             </div>
           );
@@ -2259,9 +2388,12 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const updateTheme = (t) => { setTheme(t); localStorage.setItem("byb_theme", t); };
   const styles = buildStyles(theme, isMobile);
 
-  // Close all open forms when switching tabs
+  // Close all open forms when switching tabs; reset transaction filters on re-entry
   const handleSetView = (v) => {
     setView(v);
+    if (v === "transactions") {
+      setTxFilters({ type: "all", categoryId: "all", addedBy: "all", search: "" });
+    }
     setEditingTx(null);
     setTxFormOpen(false);
     setEditingCat(null);
@@ -2270,10 +2402,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setRuleFormOpen(false);
   };
 
-  // Navigate to Transactions tab filtered by category
+  // Navigate to Transactions tab filtered by category (sets filter AFTER handleSetView to override the reset)
   const navigateToCategory = (catId) => {
-    setTxFilters({ type: "all", categoryId: catId, addedBy: "all", search: "" });
     handleSetView("transactions");
+    setTxFilters({ type: "all", categoryId: catId, addedBy: "all", search: "" });
   };
   const categoriesById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const usersById = Object.fromEntries(users.map((u) => [u.id, u]));
@@ -2332,6 +2464,12 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       showToast("Transaction updated");
     } else {
       const r = applyTxEffect(tx, 1, newCats, newUnalloc); newCats = r.newCats; newUnalloc = r.newUnalloc;
+      // If income is allocated directly to a specific envelope, move it out of unallocated immediately
+      if (tx.type === "income" && tx.allocatedEnvelopeId) {
+        const allocAmt = Math.min(tx.amount, newUnalloc);
+        newCats = newCats.map((c) => c.id === tx.allocatedEnvelopeId ? { ...c, envelopeBalance: (c.envelopeBalance || 0) + allocAmt } : c);
+        newUnalloc = newUnalloc - allocAmt;
+      }
       const created = { ...tx, id: uid(), createdAt: new Date().toISOString(), isRecurring: false, recurringId: null };
       newTx = [created, ...transactions];
       showToast("Transaction added");
@@ -2395,6 +2533,20 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setCategories(newCats); setUnallocatedBalance(newUnalloc);
     persist({ categories: newCats, unallocatedBalance: newUnalloc });
     showToast(`Added ${fmtAUD(amount)} to ${cat?.name}`);
+  };
+
+  // Log a windfall income and allocate it directly to a specific envelope (net zero on unallocated)
+  const addWindfallToEnvelope = (catId, amount, description) => {
+    const cat = categories.find((c) => c.id === catId);
+    const incomeCatId = categories.find((c) => c.type === "income")?.id || "c-other-in";
+    const incomeTx = { id: uid(), date: todayISO(), amount, type: "income", categoryId: incomeCatId, description: description || "Windfall", isRecurring: false, recurringId: null, addedBy: activeUserId, createdAt: new Date().toISOString() };
+    const newCats = categories.map((c) => c.id === catId ? { ...c, envelopeBalance: (c.envelopeBalance || 0) + amount } : c);
+    const newTx = [incomeTx, ...transactions];
+    // unallocated is unchanged: income +amount then envelope allocation -amount = net 0
+    setTransactions(newTx);
+    setCategories(newCats);
+    persist({ transactions: newTx, categories: newCats, unallocatedBalance });
+    showToast(`${fmtAUD(amount)} added to ${cat?.name}`);
   };
 
   const transferEnvelope = (fromId, toId, amount, description) => {
@@ -2829,6 +2981,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
               onTransferEnvelope={transferEnvelope}
               handleImportFile={handleImportFile}
               handleExport={handleExport}
+              onAddWindfall={addWindfallToEnvelope}
               styles={styles}
             />
           )}
@@ -2843,6 +2996,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
               deleteCat={deleteCat}
               unallocatedBalance={unallocatedBalance}
               onFillWithIncome={fillAllWithMultipleIncome}
+              onFillSingleEnvelope={fillEnvelope}
               onSetupBaseAmounts={setupBaseAmounts}
               recurring={recurring}
               onReorderCats={reorderCategories}
