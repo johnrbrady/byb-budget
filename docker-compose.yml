@@ -1,0 +1,19 @@
+services:
+  byb:
+    build: .
+    container_name: byb-budget
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      # Persist all budget data, passwords, and sessions on the host.
+      # On TrueNAS SCALE point this at a dataset, e.g. /mnt/tank/apps/byb
+      - ./data:/data
+    environment:
+      - BYB_DATA_DIR=/data
+      - BYB_PORT=3001
+      - BYB_SESSION_TTL_HOURS=72
+      # Uncomment to enable the read-only integrations API (n8n daily briefing):
+      # - BYB_API_KEY=change-me-to-a-long-random-string
+      # Uncomment to POST reconcile events to an n8n webhook:
+      # - BYB_WEBHOOK_URL=http://n8n.local:5678/webhook/byb-reconcile

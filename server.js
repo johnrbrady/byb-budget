@@ -17,6 +17,9 @@ const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 const PORT = parseInt(process.env.BYB_PORT || "3001", 10);
 const SESSION_TTL_MS = parseInt(process.env.BYB_SESSION_TTL_HOURS || "72", 10) * 3600_000; // default 72h
 const BCRYPT_ROUNDS = parseInt(process.env.BYB_BCRYPT_ROUNDS || "12", 10);
+// Integrations (both optional — features are disabled when unset)
+const API_KEY = process.env.BYB_API_KEY || "";          // read-only summary endpoint for n8n etc.
+const WEBHOOK_URL = process.env.BYB_WEBHOOK_URL || ""; // outbound POST on reconcile events
 
 const app = express();
 
@@ -76,6 +79,8 @@ if (!fs.existsSync(DATA_FILE)) {
       users: [{ id: "u-user1", name: "User 1", role: "owner", colour: "#7FB069" }],
       assets: [],
       transfers: [],
+      reconcileLog: [],
+      dataVersion: 0,
     }, null, 2)
   );
 }
@@ -143,6 +148,16 @@ function requireAdmin(req, res, next) {
   });
 }
 
+// API-key middleware for read-only integration endpoints (n8n etc.).
+// Disabled entirely unless BYB_API_KEY is set in the environment.
+function requireApiKey(req, res, next) {
+  if (!API_KEY) return res.status(403).json({ error: "Integrations disabled — set BYB_API_KEY to enable" });
+  const provided = req.headers["x-api-key"] ||
+    ((req.headers.authorization || "").startsWith("Bearer ") ? req.headers.authorization.slice(7) : "");
+  if (provided !== API_KEY) return res.status(401).json({ error: "Invalid API key" });
+  next();
+}
+
 // ── Input validation helpers ────────────────────────────────────────────────
 function isValidString(val, maxLen = 200) {
   return typeof val === "string" && val.trim().length > 0 && val.length <= maxLen;
@@ -152,7 +167,7 @@ function validateBudgetData(data) {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     return "Data must be a JSON object";
   }
-  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers"];
+  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "dataVersion"];
   for (const key of Object.keys(data)) {
     if (!allowed.includes(key)) return `Unknown field: ${key}`;
   }
@@ -162,8 +177,12 @@ function validateBudgetData(data) {
   if (data.users && !Array.isArray(data.users)) return "users must be an array";
   if (data.assets && !Array.isArray(data.assets)) return "assets must be an array";
   if (data.transfers && !Array.isArray(data.transfers)) return "transfers must be an array";
+  if (data.reconcileLog && !Array.isArray(data.reconcileLog)) return "reconcileLog must be an array";
   if (data.unallocatedBalance !== undefined && typeof data.unallocatedBalance !== "number") {
     return "unallocatedBalance must be a number";
+  }
+  if (data.dataVersion !== undefined && typeof data.dataVersion !== "number") {
+    return "dataVersion must be a number";
   }
   // Size guard — prevent unreasonably large payloads
   const txCount = (data.transactions || []).length;
@@ -234,6 +253,16 @@ app.post("/api/auth/update-profile", requireAuth, (req, res) => {
   res.json({ ok: true, name: name.trim() });
 });
 
+// POST /api/auth/welcome-seen — persist that this user has seen the welcome
+// message. Stored on the user record so it follows the account across
+// devices and survives session expiry (the old localStorage flag did not).
+app.post("/api/auth/welcome-seen", requireAuth, (req, res) => {
+  const data = readJSON(DATA_FILE);
+  data.users = (data.users || []).map((u) => (u.id === req.userId ? { ...u, hasSeenWelcome: true } : u));
+  writeJSON(DATA_FILE, data);
+  res.json({ ok: true });
+});
+
 // POST /api/admin/add-user — admin adds a new user
 app.post("/api/admin/add-user", requireAdmin, (req, res) => {
   const { name, role, colour } = req.body || {};
@@ -295,21 +324,105 @@ app.post("/api/auth/set-password", requireAuth, async (req, res) => {
 app.get("/api/data", requireAuth, (req, res) => {
   try {
     const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+    // Migrate-on-read: older data files have no version or reconcile log
+    if (typeof data.dataVersion !== "number") data.dataVersion = 0;
+    if (!Array.isArray(data.reconcileLog)) data.reconcileLog = [];
     res.json(data);
   } catch {
     res.status(500).json({ error: "Could not read data" });
   }
 });
 
-// POST /api/data — with schema validation
+// POST /api/data — with schema validation and optimistic-concurrency guard.
+// Clients send back the dataVersion they loaded. If another client has saved
+// since, versions no longer match and the write is rejected with 409 so the
+// stale client can reload instead of silently overwriting newer data.
 app.post("/api/data", requireAuth, (req, res) => {
   const error = validateBudgetData(req.body);
   if (error) return res.status(400).json({ error });
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(req.body, null, 2));
-    res.json({ ok: true });
+    const current = readJSON(DATA_FILE);
+    const currentVersion = typeof current.dataVersion === "number" ? current.dataVersion : 0;
+    const clientVersion = typeof req.body.dataVersion === "number" ? req.body.dataVersion : 0;
+    if (clientVersion !== currentVersion) {
+      return res.status(409).json({
+        error: "Data has changed since you loaded it — reloading latest",
+        dataVersion: currentVersion,
+      });
+    }
+    const next = { ...req.body, dataVersion: currentVersion + 1 };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(next, null, 2));
+    res.json({ ok: true, dataVersion: next.dataVersion });
   } catch {
     res.status(500).json({ error: "Could not write data" });
+  }
+});
+
+// ── Integrations ────────────────────────────────────────────────────────────
+
+// GET /api/integrations/summary — read-only budget summary for automation
+// tools (n8n daily briefing etc.). Auth: x-api-key header or Bearer token
+// matching BYB_API_KEY. Returns 403 until BYB_API_KEY is configured.
+app.get("/api/integrations/summary", requireApiKey, (req, res) => {
+  try {
+    const data = readJSON(DATA_FILE);
+    const transactions = data.transactions || [];
+    const categories = data.categories || [];
+    const recurring = data.recurring || [];
+    const assets = data.assets || [];
+    const reconcileLog = data.reconcileLog || [];
+
+    const now = new Date();
+    const month = now.toISOString().slice(0, 7);
+    const inMonth = (t) => (t.date || "").slice(0, 7) === month;
+    const monthIncome = transactions.filter((t) => t.type === "income" && inMonth(t)).reduce((s, t) => s + t.amount, 0);
+    const monthExpenses = transactions.filter((t) => t.type === "expense" && inMonth(t)).reduce((s, t) => s + t.amount, 0);
+
+    const sevenDays = new Date(now.getTime() + 7 * 86400_000).toISOString().slice(0, 10);
+    const today = now.toISOString().slice(0, 10);
+    const upcomingBills = recurring
+      .filter((r) => r.nextDueDate <= sevenDays)
+      .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate))
+      .map((r) => ({ label: r.label, amount: r.amount, type: r.type, dueDate: r.nextDueDate, overdue: r.nextDueDate <= today }));
+
+    const envelopes = categories
+      .filter((c) => c.type === "expense")
+      .map((c) => ({ name: c.name, balance: c.envelopeBalance || 0, base: c.baseAmount || 0, accumulating: !!c.isAccumulating }));
+
+    res.json({
+      generatedAt: now.toISOString(),
+      month,
+      unallocatedBalance: data.unallocatedBalance || 0,
+      totalInEnvelopes: envelopes.reduce((s, e) => s + e.balance, 0),
+      monthIncome,
+      monthExpenses,
+      monthNet: monthIncome - monthExpenses,
+      envelopes,
+      lowEnvelopes: envelopes.filter((e) => e.base > 0 && e.balance < e.base * 0.2).map((e) => e.name),
+      upcomingBills,
+      netWorth: assets.reduce((s, a) => s + (a.value || 0), 0),
+      lastReconcile: reconcileLog.length > 0 ? reconcileLog[0] : null,
+      transactionCount: transactions.length,
+    });
+  } catch {
+    res.status(500).json({ error: "Could not build summary" });
+  }
+});
+
+// POST /api/events/reconcile — fire-and-forget webhook notification.
+// The reconcile entry itself is persisted via /api/data with the rest of the
+// budget; this endpoint only notifies an external system (n8n) if configured.
+app.post("/api/events/reconcile", requireAuth, async (req, res) => {
+  res.json({ ok: true, webhook: !!WEBHOOK_URL });
+  if (!WEBHOOK_URL) return;
+  try {
+    await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "reconcile", entry: req.body || {}, at: new Date().toISOString() }),
+    });
+  } catch (e) {
+    console.warn("Reconcile webhook failed:", e.message);
   }
 });
 
@@ -333,6 +446,8 @@ if (fs.existsSync(DIST_DIR)) {
 // ── Start ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`BYB! server running at http://localhost:${PORT}`);
+  console.log(`  Integrations API: ${API_KEY ? "enabled (/api/integrations/summary)" : "disabled — set BYB_API_KEY to enable"}`);
+  console.log(`  Reconcile webhook: ${WEBHOOK_URL ? WEBHOOK_URL : "disabled — set BYB_WEBHOOK_URL to enable"}`);
   if (fs.existsSync(DIST_DIR)) {
     console.log(`  App available at http://localhost:${PORT}`);
   } else {

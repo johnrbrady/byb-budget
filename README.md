@@ -1,91 +1,129 @@
-# Budget App
+# BYB! — Ban' Yuh Belly Budgeting
 
-Personal household budgeting for family use. React + Vite + XLSX, running locally — no server, no cloud, no login.
+Household envelope budgeting for the family. React + Vite frontend, Express
+API with JSON-file storage, password logins, XLSX export, and an automation
+API for n8n. Runs on a laptop for development and on TrueNAS SCALE (Docker)
+for the household.
 
-## Prerequisites
-
-- **Node.js 18 or newer** — download from https://nodejs.org. Includes `npm`.
-- **VS Code** (or any editor).
-
-That is the only software you need. The `xlsx` library is pure JavaScript and runs in the browser.
-
-## Install
+## Quick start (local)
 
 ```bash
-cd "E:\Claude Projects\Budget App"
+cd "Budget App"
 npm install
+npm start          # runs the Vite dev server (:5173) AND the API server (:3001)
 ```
 
-This downloads React, Vite, the `xlsx` library, and the test tooling into `node_modules/`.
+Open http://localhost:5173. The Vite dev server proxies `/api/*` to the
+Express server.
 
-## Run locally
+Other scripts:
 
 ```bash
-npm run dev
+npm run dev        # frontend only
+npm run server     # API only (also serves dist/ if it exists)
+npm run build      # production bundle to dist/
+npm run preview    # sanity-check the production build
+npm test           # Jest suite (jsdom)
 ```
-
-Vite serves the app at **http://localhost:5173** and opens it automatically. Edits to `src/` files hot-reload in the browser.
-
-## Run tests
-
-```bash
-npm test
-```
-
-Runs the Jest suite in a simulated browser (`jsdom`). Tests live in `src/BudgetApp.test.jsx`.
-
-## Build for production
-
-```bash
-npm run build
-```
-
-Writes a static bundle to `dist/`. You can open `dist/index.html` directly, or host the folder anywhere.
-
-```bash
-npm run preview
-```
-
-Serves the built `dist/` folder at http://localhost:4173 so you can sanity-check the production build.
 
 ## Project structure
 
 ```
 Budget App/
-├── claude.md                      ← project spec + agent definitions
-├── wireframe.md                   ← UI layout spec (step 1)
-├── schema.md                      ← data models (step 2)
-├── BudgetApp.jsx                  ← generated component (step 3, audit copy)
-├── BudgetApp-review.md            ← review report (step 4)
-├── BudgetApp-revised.jsx          ← corrected component (step 4, audit copy)
-├── BudgetApp.test.jsx             ← tests (step 5, audit copy)
-├── test-summary.md                ← what is tested (step 5)
-├── index.html                     ← Vite entry point
-├── package.json                   ← dependencies + scripts
-├── vite.config.js                 ← dev server config
-├── babel.config.json              ← for Jest
-├── jest.config.js                 ← test runner
-├── jest.setup.js                  ← testing-library setup
-├── .gitignore
+├── server.js                  ← Express API: auth, data, integrations
+├── index.html                 ← Vite entry point
+├── vite.config.js             ← dev server + /api proxy
+├── Dockerfile                 ← production image (build + serve)
+├── docker-compose.yml         ← TrueNAS-friendly deployment
+├── .env.example               ← server configuration reference
+├── UPDATE-NOTES.md            ← what changed in the latest update
+├── public/                    ← logo, manifest, service worker (sw.js)
 └── src/
-    ├── main.jsx                   ← mounts <BudgetApp /> and wires XLSX helpers
-    ├── BudgetApp.jsx              ← the component used by Vite at runtime
-    ├── BudgetApp.test.jsx         ← the test file Jest runs
-    └── xlsx-helpers.js            ← exportToXlsx + importFromXlsx (SheetJS)
+    ├── main.jsx               ← root: data loading, debounced saves, SW registration
+    ├── BudgetApp.jsx          ← app shell: state, handlers, tab navigation
+    ├── lib/                   ← constants.js (palette, defaults), utils.js
+    ├── hooks/                 ← useIsMobile, useLongPress
+    ├── styles/                ← global.css (theme vars, motion), buildStyles.js
+    ├── components/            ← Sidebar, Header, forms, modals, AddIncomeFlow,
+    │                            ConfirmDialog, QuickActions, Icons, PieChart…
+    ├── views/                 ← Dashboard, Transactions, Envelopes, Recurring,
+    │                            Reports, LoginPage
+    ├── xlsx-helpers.js        ← exportToXlsx / importFromXlsx (ExcelJS)
+    └── BudgetApp.test.jsx     ← Jest + React Testing Library suite
 ```
 
-The root-level `BudgetApp.jsx`, `BudgetApp-revised.jsx`, and `BudgetApp.test.jsx` are the agent audit trail. The files that actually run live under `src/`.
+The root-level `BudgetApp.jsx`, `BudgetApp-revised.jsx`, `BudgetApp.test.jsx`,
+`wireframe.md`, `schema.md` and `test-summary.md` are the original agent audit
+trail from v0.3–v0.5. They are historical documents — the running code lives
+under `src/`.
 
-## How XLSX works
+## How it works
 
-- The component exposes **Import** and **Export** buttons on the Transactions view.
-- Import is also available on the Reports view.
-- Export produces `budget-YYYY-MM-DD.xlsx` with two sheets: **Transactions** and **Summary**. Your browser downloads it.
-- Import accepts the same format back. Rows match by `id` first, then fall back to matching `categoryName` and `addedByName` (case-insensitive). Unmatchable rows are skipped and counted in the toast.
+- **Envelopes** — each expense category is an envelope with a monthly fill
+  amount (`baseAmount`) and a current balance. Income lands in **Unallocated**
+  and moves into envelopes via fills, splits, or transfers.
+- **Add Income** (Dashboard / Transactions) — one flow for all money in:
+  choose a stream (or create one inline), enter the amount, then keep it
+  unallocated, run a fill, or split it across envelopes.
+- **Reconcile** (Dashboard) — end of month: surpluses from non-savings
+  envelopes are pooled, deficits covered, remainder returned to Unallocated.
+  Every run is recorded in the reconcile history (Reports).
+- **Recurring** — weekly/fortnightly/monthly rules; due rules post with one
+  click and advance their next-due date.
+- **Reports** — net worth (manual asset snapshots), trends, category
+  breakdowns (click through to transactions), transfers and reconcile logs,
+  XLSX export, AI-assisted bank-statement import (JSON paste).
 
-## Data
+## Data & persistence
 
-Everything is in React state. Refreshing the page resets to the seed data in `src/BudgetApp.jsx`. To make changes persist between sessions, export to XLSX before closing and import on your next session. (Adding `localStorage` persistence is a natural next step — see `wireframe.md` for what was planned but deferred.)
+All data lives in `data/` next to `server.js` (or `BYB_DATA_DIR`):
+
+- `budget.json` — transactions, categories, recurring rules, users, assets,
+  transfers, reconcile log, and a `dataVersion` counter used to detect
+  concurrent edits (stale writes are rejected with 409 and the client
+  reloads).
+- `passwords.json` — bcrypt hashes. First sign-in sets the password.
+- `sessions.json` — bearer tokens with expiry (default 72 h).
+
+Back up the `data/` directory and you have everything.
+
+## Authentication
+
+Pick a user on the login page and enter a password. The first password ever
+set promotes that user to owner. Admins can add users and change roles from
+Settings (avatar button, top right).
+
+## Integrations (n8n)
+
+Set `BYB_API_KEY` in the environment, then:
+
+```
+GET /api/integrations/summary
+x-api-key: <your key>
+```
+
+returns unallocated balance, per-envelope balances, month-to-date income and
+expenses, low envelopes, upcoming bills (7 days), net worth, and the last
+reconcile — ready for a daily-briefing workflow in n8n (HTTP Request node).
+
+Optionally set `BYB_WEBHOOK_URL` to receive a POST whenever someone presses
+Reconcile.
+
+## Deployment (TrueNAS SCALE)
+
+```bash
+docker compose up -d --build
+```
+
+- The compose file maps `./data` into the container — point it at a dataset
+  (e.g. `/mnt/tank/apps/byb`) so budget data survives image rebuilds.
+- The app serves on port 3001 (HTTP). Put Tailscale or a reverse proxy in
+  front for HTTPS; the server's security headers already assume this.
+- Set `BYB_API_KEY` / `BYB_WEBHOOK_URL` in the compose environment to enable
+  the n8n integration.
+
+Once deployed, open the address on your phone and "Add to Home Screen" — the
+app is a PWA and behaves like a native app.
 
 ## Colour palette
 
@@ -95,7 +133,11 @@ Everything is in React state. Refreshing the page resets to the seed data in `sr
 
 ## Troubleshooting
 
-- **`npm install` fails on Windows with EACCES or path-length errors** — move the project to a shorter path like `C:\budget-app` and retry.
-- **Port 5173 already in use** — edit `vite.config.js` and change `port` to something else.
-- **Tests complain about ESM** — make sure `package.json` has `"type": "module"` and that you ran `npm install` after pulling the project.
-- **Nothing imports when you click Import** — check the browser console; the file must be an `.xlsx` with a `Transactions` sheet (or a single-sheet workbook whose columns match the export format).
+- **"Could not reach the server"** — run `npm start` (not just `npm run dev`);
+  the API server must be running on :3001.
+- **Save conflict messages** — two people edited at once; the app reloads the
+  latest data automatically. Re-apply your change.
+- **Service worker serving stale assets after an update** — hard-refresh once
+  (Ctrl+Shift+R); the worker takes over on the next load.
+- **Port in use** — change `BYB_PORT` (server) or `server.port` in
+  `vite.config.js` (frontend).

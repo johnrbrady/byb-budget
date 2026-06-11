@@ -1,0 +1,252 @@
+/* ── BYB! global styles ─────────────────────────────────────────────────────
+   Theme variables + motion. Component layout still uses the styles object
+   (buildStyles.js); this file provides what inline styles cannot:
+   transitions, animations, hover/focus states, and scrollbar styling. */
+
+:root {
+  --byb-primary: #7FB069;
+  --byb-primary-deep: #5F8A4F;
+  --byb-secondary: #B8D4AE;
+  --byb-warn: #C27B3F;
+  --byb-danger: #DC2626;
+
+  --byb-surface: #FFFFFF;
+  --byb-surface-alt: #F7F8F6;
+  --byb-text: #1A1A1A;
+  --byb-text-muted: #6B6F6B;
+  --byb-border: #E4E8E0;
+  --byb-bar-track: #E4E8E0;
+  --byb-overlay: rgba(0, 0, 0, 0.5);
+
+  --byb-radius: 10px;
+  --byb-radius-sm: 6px;
+  --byb-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --byb-shadow-pop: 0 8px 40px rgba(0, 0, 0, 0.22);
+
+  --byb-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+[data-theme="dark"] {
+  --byb-surface: #1A1A1A;
+  --byb-surface-alt: #242624;
+  --byb-text: #F5F5F5;
+  --byb-text-muted: #9AA09A;
+  --byb-border: #2F322F;
+  --byb-bar-track: #2F322F;
+  --byb-overlay: rgba(0, 0, 0, 0.65);
+  --byb-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+html {
+  background: var(--byb-surface);
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Interactive element states ────────────────────────────────────────── */
+
+button {
+  transition: background-color 0.15s var(--byb-ease), border-color 0.15s var(--byb-ease),
+    color 0.15s var(--byb-ease), opacity 0.15s var(--byb-ease), transform 0.1s var(--byb-ease),
+    box-shadow 0.15s var(--byb-ease);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input, select, textarea {
+  transition: border-color 0.15s var(--byb-ease), box-shadow 0.15s var(--byb-ease);
+}
+
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--byb-primary) !important;
+  box-shadow: 0 0 0 3px rgba(127, 176, 105, 0.25);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--byb-primary);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar (desktop) ───────────────────────────────────────────────── */
+
+@media (pointer: fine) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--byb-border);
+    border-radius: 5px;
+    border: 2px solid var(--byb-surface);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--byb-text-muted); }
+}
+
+/* ── View transitions ──────────────────────────────────────────────────── */
+
+@keyframes byb-view-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes byb-view-in-left {
+  from { opacity: 0; transform: translateX(-24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes byb-view-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.byb-view { animation: byb-view-in 0.22s var(--byb-ease); }
+.byb-view-left { animation: byb-view-in-left 0.22s var(--byb-ease); }
+.byb-view-right { animation: byb-view-in-right 0.22s var(--byb-ease); }
+
+/* While swiping between tabs, the content tracks the finger */
+.byb-swipe-track {
+  transition: transform 0.2s var(--byb-ease);
+}
+.byb-swipe-track.byb-swiping {
+  transition: none;
+}
+
+/* ── Forms / panels slide open ─────────────────────────────────────────── */
+
+@keyframes byb-panel-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.byb-panel { animation: byb-panel-in 0.18s var(--byb-ease); }
+
+/* ── Modals ────────────────────────────────────────────────────────────── */
+
+@keyframes byb-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes byb-modal-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes byb-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.byb-overlay { animation: byb-overlay-in 0.18s var(--byb-ease); }
+.byb-modal { animation: byb-modal-in 0.22s var(--byb-ease); }
+.byb-sheet { animation: byb-sheet-in 0.26s var(--byb-ease); }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+
+@keyframes byb-toast-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.byb-toast { animation: byb-toast-in 0.22s var(--byb-ease); }
+
+/* ── Progress bars ─────────────────────────────────────────────────────── */
+
+.byb-bar-fill {
+  transition: width 0.45s var(--byb-ease), background-color 0.3s var(--byb-ease);
+}
+
+/* ── Long-press quick-action menu ──────────────────────────────────────── */
+
+@keyframes byb-quickmenu-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.byb-quickmenu { animation: byb-quickmenu-in 0.16s var(--byb-ease); transform-origin: bottom right; }
+
+/* ── Skeleton loading screen ───────────────────────────────────────────── */
+
+@keyframes byb-shimmer {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
+
+.byb-skeleton {
+  background: var(--byb-border);
+  border-radius: 8px;
+  animation: byb-shimmer 1.4s ease-in-out infinite;
+}
+
+.byb-skeleton-screen {
+  display: flex;
+  min-height: 100vh;
+  background: var(--byb-surface);
+}
+
+.byb-skeleton-sidebar {
+  width: 220px;
+  background: var(--byb-surface-alt);
+  border-right: 1px solid var(--byb-border);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.byb-skeleton-logo { width: 120px; height: 40px; margin-bottom: 16px; }
+.byb-skeleton-nav { width: 100%; height: 20px; }
+
+.byb-skeleton-main {
+  flex: 1;
+  padding: 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1200px;
+}
+
+.byb-skeleton-header { width: 40%; height: 32px; }
+.byb-skeleton-kpi { width: 100%; height: 90px; }
+.byb-skeleton-row { width: 100%; height: 56px; }
+
+@media (max-width: 767px) {
+  .byb-skeleton-sidebar { display: none; }
+  .byb-skeleton-main { padding: 16px 12px; }
+}
+
+/* ── Hover affordances (mouse only) ────────────────────────────────────── */
+
+@media (hover: hover) and (pointer: fine) {
+  .byb-hover-row:hover { background: var(--byb-surface-alt); }
+  .byb-hover-card:hover {
+    border-color: var(--byb-primary) !important;
+    box-shadow: 0 2px 12px rgba(127, 176, 105, 0.18);
+  }
+  .byb-nav-item:hover { color: var(--byb-text) !important; }
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
