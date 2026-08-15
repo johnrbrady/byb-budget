@@ -11,13 +11,13 @@ data/
 BudgetApp-review.md
 BudgetApp-revised.jsx
 /BudgetApp.jsx
+# Stale root-level draft suite against BudgetApp-revised.jsx, and the summary
+# that documents it. Anchored with a leading slash so they do not also hide the
+# real suite at src/BudgetApp.test.jsx.
+/BudgetApp.test.jsx
+/test-summary.md
 convert-history.js
 history-import.xlsx
 schema.md
 wireframe.md
 claude.md
-BudgetApp.test.jsx
-test-summary.md
-babel.config.json
-jest.config.js
-jest.setup.js
