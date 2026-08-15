@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
 import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
-import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger, applyOpeningBalances } from "./lib/money.js";
+import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger, applyOpeningBalances, applyResetBalances, applySetUnallocated, householdTotal } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
 import { useIsMobile } from "./hooks/useIsMobile.js";
 import { useSwipeNavigation } from "./hooks/useSwipeNavigation.js";
@@ -17,6 +17,11 @@ import { RecurringView } from "./views/RecurringView.jsx";
 import { ReportsView } from "./views/ReportsView.jsx";
 
 const INCOME_COLOURS = ["#A0B894", "#8FA876", "#6B9559", "#7FB069", "#5F8A4F"];
+
+// How far the unallocated balance may be moved by hand before the app asks
+// first. See setUnallocatedManually for why there is a line at all, and why it
+// is here rather than lower.
+const UNALLOCATED_CONFIRM_AT = 100;
 
 export default function BudgetApp({ onImport, onExport, onSave, onReload, initialData } = {}) {
   const initUsers = initialData?.users?.length ? initialData.users : DEFAULT_USERS;
@@ -51,10 +56,28 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const [assets, setAssets] = useState(initialData?.assets?.length ? initialData.assets : []);
   const [transfers, setTransfers] = useState(initialData?.transfers?.length ? initialData.transfers : []);
   const [reconcileLog, setReconcileLog] = useState(Array.isArray(initialData?.reconcileLog) ? initialData.reconcileLog : []);
-  // Money that entered the budget at first-time setup. A file written before
-  // this existed simply has no key, which reads as "none was ever recorded" —
-  // which is exactly what it means. Nothing migrates.
-  const [openingBalances, setOpeningBalances] = useState(Array.isArray(initialData?.openingBalances) ? initialData.openingBalances : []);
+  // Every deliberate change to the household total that is not a transaction:
+  // opening the envelopes at setup, resetting all balances, setting unallocated
+  // by hand. One log rather than three, because they are one question — "what
+  // moved my total, and who did it" — and a reader answering it should not have
+  // to interleave three lists by date. Reconciles and transfers stay where they
+  // are: they conserve the total, so they answer a different question.
+  //
+  // A file written before this existed simply has no key, which reads as
+  // "nothing was ever recorded" — which is exactly what it means.
+  //
+  // `openingBalances` was this log's short-lived predecessor. It was never
+  // written by a deployed instance, so folding it in costs nothing and is done
+  // on read; a file that has it keeps its history, and the key falls away on the
+  // next save. A file that has neither is simply a household with no
+  // adjustments yet.
+  const [adjustments, setAdjustments] = useState(() => {
+    if (Array.isArray(initialData?.adjustments)) return initialData.adjustments;
+    if (Array.isArray(initialData?.openingBalances)) {
+      return initialData.openingBalances.map((e) => ({ ...e, kind: "opening", amount: e.amount ?? e.total }));
+    }
+    return [];
+  });
   const [view, setView] = useState("dashboard");
   const [viewAnim, setViewAnim] = useState(""); // "", "left", "right"
   const [theme, setTheme] = useState(() => localStorage.getItem("byb_theme") || "light");
@@ -219,7 +242,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setTimeout(() => setToast(null), 2400);
   };
 
-  const persist = (patch) => onSave?.({ transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, openingBalances, ...patch });
+  const persist = (patch) => onSave?.({ transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments, ...patch });
 
   // The envelope arithmetic itself lives in lib/money.js. This component holds
   // the state and decides what to ask the user; it does not do the sums.
@@ -229,6 +252,23 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setCategories(newCats);
     setUnallocatedBalance(newUnalloc);
     persist({ categories: newCats, unallocatedBalance: newUnalloc, ...patch });
+  };
+
+  // Commit one of money.js's adjustments and write it down in the same breath.
+  //
+  // Everything numeric in the entry — before, after, amount, the per-envelope
+  // detail — comes from the same pass that produced the ledger being committed,
+  // so the record cannot drift from the balances it explains. All this adds is
+  // who, when, and which kind.
+  //
+  // Capped like `reconcileLog`, and for the same reason: the whole file is
+  // rewritten on every save. 120 entries is decades of a log this quiet.
+  const recordAdjustment = (kind, { ledger: next, ...detail }, patch = {}) => {
+    const entry = { id: uid(), date: todayISO(), at: new Date().toISOString(), userId: activeUserId, kind, ...detail };
+    const newAdjustments = [entry, ...adjustments].slice(0, 120);
+    setAdjustments(newAdjustments);
+    commitLedger(next, { adjustments: newAdjustments, ...patch });
+    return entry;
   };
 
   const saveTx = (tx) => {
@@ -431,11 +471,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   // balance is not earnings, so it is not an income transaction: monthly income
   // totals, the trend charts and the n8n summary at /api/integrations/summary
   // all count `type === "income"` rows, and a $10,000 adoption balance landing
-  // in them would misreport the household's first month for good. It goes in a
-  // log of its own instead, the same shape the app already uses for the other
-  // ledger events that are not transactions (`reconcileLog`, `transfers`):
-  // dated, attributed, with the per-envelope breakdown and the total it moved
-  // the household by.
+  // in them would misreport the household's first month for good. It goes in the
+  // adjustments log instead, alongside the other deliberate changes to the
+  // household total: dated, attributed, with the per-envelope breakdown and the
+  // amount it moved the household by.
   const setupBaseAmounts = async (amountsMap) => {
     const withBases = categories.map((c) =>
       amountsMap[c.id] !== undefined
@@ -452,32 +491,19 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       showToast(msg);
     };
 
-    if (opening.total <= 0) { setUpOnly("Envelopes set up. Add money as it arrives."); return; }
+    if (opening.amount <= 0) { setUpOnly("Envelopes set up. Add money as it arrives."); return; }
 
     const fund = await askConfirm({
       title: "Do you already have this money?",
-      message: `Your envelopes add up to ${fmtAUD(opening.total)}.\n\nIf that money is already in your account, BYB! can open them holding it. It is recorded as an opening balance dated today, so your totals still add up and you can see later where the money came from.\n\nIf it is not there yet, start the envelopes empty and fill them as income arrives.`,
-      confirmLabel: `Yes, open with ${fmtAUD(opening.total)}`,
+      message: `Your envelopes add up to ${fmtAUD(opening.amount)}.\n\nIf that money is already in your account, BYB! can open them holding it. It is recorded as an opening balance dated today, so your totals still add up and you can see later where the money came from.\n\nIf it is not there yet, start the envelopes empty and fill them as income arrives.`,
+      confirmLabel: `Yes, open with ${fmtAUD(opening.amount)}`,
       cancelLabel: "Start empty",
     });
 
     if (!fund) { setUpOnly("Envelopes set up · balances start empty"); return; }
 
-    // `total` is this entry's account of how much the household total moved, so
-    // it is stored exactly as applied rather than rounded. A rounded copy would
-    // be a record that no longer agrees with the balances it explains.
-    const entry = {
-      id: uid(),
-      date: todayISO(),
-      at: new Date().toISOString(),
-      userId: activeUserId,
-      total: opening.total,
-      entries: opening.entries,
-    };
-    const newOpening = [entry, ...openingBalances];
-    setOpeningBalances(newOpening);
-    commitLedger(opening.ledger, { openingBalances: newOpening });
-    showToast(`Envelopes set up · ${fmtAUD(opening.total)} opening balance recorded`);
+    recordAdjustment("opening", opening);
+    showToast(`Envelopes set up · ${fmtAUD(opening.amount)} opening balance recorded`);
   };
 
   // End-of-month reconcile: pool non-savings surpluses, cover deficits,
@@ -526,12 +552,37 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     showToast(msg);
   };
 
-  const resetAllBalances = () => {
-    const newCats = categories.map((c) => ({ ...c, envelopeBalance: 0 }));
-    setCategories(newCats);
-    setUnallocatedBalance(0);
-    persist({ categories: newCats, unallocatedBalance: 0 });
-    showToast("All balances reset to zero");
+  // Wipe every balance. Starting over is a legitimate thing to want, so this is
+  // not taken away — but it destroys the household's money outright, and it sits
+  // in a settings menu that more than one person opens.
+  //
+  // There has always been a dialog here; it lived in SettingsModal and said only
+  // that balances would be cleared and that it could not be undone. That is the
+  // shape of a warning without being one: it is the same sentence whether the
+  // household holds nothing or holds four thousand dollars, so it tells the
+  // reader nothing they can weigh. The question moved here, where the ledger
+  // actually is, and now states what is about to be destroyed.
+  //
+  // Returns whether the reset happened, so Settings can stay open if it did not.
+  const resetAllBalances = async () => {
+    const holding = categories.filter((c) => (c.envelopeBalance || 0) !== 0);
+    const total = householdTotal(ledger());
+    // Nothing to destroy is not a question worth asking, and an entry saying
+    // "$0.00 became $0.00" is a row in the log that says nothing.
+    if (holding.length === 0 && unallocatedBalance === 0) { showToast("All balances are already zero"); return false; }
+
+    const inEnvelopes = holding.reduce((s, c) => s + (c.envelopeBalance || 0), 0);
+    const confirmed = await askConfirm({
+      title: "Reset all balances to zero?",
+      message: `${holding.length} envelope${holding.length === 1 ? " holds" : "s hold"} ${fmtAUD(inEnvelopes)} and Unallocated holds ${fmtAUD(unallocatedBalance)} — ${fmtAUD(total)} in all. Every one of them is set to ${fmtAUD(0)}.\n\nYour transactions and history are not affected, and the reset is recorded in Reports. The balances themselves cannot be recovered. This cannot be undone.`,
+      confirmLabel: "Reset balances",
+      danger: true,
+    });
+    if (!confirmed) return false;
+
+    const entry = recordAdjustment("reset", applyResetBalances(ledger()));
+    showToast(`All balances reset to zero · ${fmtAUD(-entry.amount)} cleared`);
+    return true;
   };
 
   const reorderCategories = (newCats) => {
@@ -539,9 +590,34 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     persist({ categories: newCats });
   };
 
-  const setUnallocatedManually = (amount) => {
-    setUnallocatedBalance(amount);
-    persist({ unallocatedBalance: amount });
+  // Type a new unallocated balance. This is the household reconciling the app
+  // against a bank statement, and it changes the household total by whatever the
+  // difference happens to be.
+  //
+  // It is always recorded — the total moved, and something has to be able to say
+  // why. It is not always confirmed. The everyday use of this editor is a small
+  // correction ("the app says $250.40, the bank says $250.15"), and a dialog on
+  // every one of those teaches the household to dismiss dialogs, which is
+  // precisely what must not happen to the reset dialog above. So the question is
+  // asked when the change stops looking like a correction: a slipped digit on a
+  // balance large enough to matter moves it by hundreds or thousands, while a
+  // genuine correction moves it by tens. UNALLOCATED_CONFIRM_AT sits between
+  // those, and it is a round number a household can hold in their head.
+  const setUnallocatedManually = async (amount) => {
+    const change = applySetUnallocated(ledger(), amount);
+    if (change.amount === 0) { showToast(`Unallocated is already ${fmtAUD(amount)}`); return; }
+
+    if (Math.abs(change.amount) >= UNALLOCATED_CONFIRM_AT) {
+      const direction = change.amount > 0 ? "add" : "remove";
+      const confirmed = await askConfirm({
+        title: `Set Unallocated to ${fmtAUD(amount)}?`,
+        message: `Unallocated goes from ${fmtAUD(change.unallocated.before)} to ${fmtAUD(amount)}. That will ${direction} ${fmtAUD(Math.abs(change.amount))}, taking everything you hold from ${fmtAUD(change.before)} to ${fmtAUD(change.after)}.\n\nYour envelopes are not touched. The change is recorded in Reports.`,
+        confirmLabel: "Set balance",
+      });
+      if (!confirmed) return;
+    }
+
+    recordAdjustment("set-unallocated", change);
     showToast(`Unallocated set to ${fmtAUD(amount)}`);
   };
 
@@ -879,6 +955,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
                   onDeleteAsset={deleteAsset}
                   transfers={transfers}
                   reconcileLog={reconcileLog}
+                  adjustments={adjustments}
                   unallocatedBalance={unallocatedBalance}
                   onSetUnallocated={setUnallocatedManually}
                   onImportJSON={importFromJSON}

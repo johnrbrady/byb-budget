@@ -144,18 +144,21 @@ describe("First-time setup: opening balances", () => {
     // arriving at the wizard has nothing in the app yet; after must be the
     // recorded total and not a cent more.
     test("the household total moves by exactly the amount recorded", () => {
-      const recorded = saved.openingBalances[0];
+      const recorded = saved.adjustments[0];
       expect(householdTotalOf(saved)).toBe(800);
-      expect(recorded.total).toBe(800);
-      expect(householdTotalOf(saved) - 0).toBe(recorded.total);
+      expect(recorded.amount).toBe(800);
+      expect(householdTotalOf(saved) - 0).toBe(recorded.amount);
     });
 
     // A bug can conserve the total while putting the money in the wrong
     // envelope, so the split is checked envelope by envelope against the record
     // rather than only in aggregate.
     test("every envelope holds what the record says it was given", () => {
-      const recorded = saved.openingBalances[0];
-      expect(recorded.entries).toEqual([{ catId: "c-a", amount: 500 }, { catId: "c-b", amount: 300 }]);
+      const recorded = saved.adjustments[0];
+      expect(recorded.entries).toEqual([
+        { catId: "c-a", before: 0, amount: 500, after: 500 },
+        { catId: "c-b", before: 0, amount: 300, after: 300 },
+      ]);
       for (const e of recorded.entries) expect(balanceOf(saved, e.catId)).toBe(e.amount);
       expect(balanceOf(saved, "c-a")).toBe(500);
       expect(balanceOf(saved, "c-b")).toBe(300);
@@ -168,7 +171,7 @@ describe("First-time setup: opening balances", () => {
     test("envelopes left blank in the wizard are given nothing and recorded as nothing", () => {
       expect(balanceOf(saved, "c-incidentals")).toBe(0);
       expect(balanceOf(saved, "c-savings")).toBe(0);
-      expect(saved.openingBalances[0].entries.map((e) => e.catId)).toEqual(["c-a", "c-b"]);
+      expect(saved.adjustments[0].entries.map((e) => e.catId)).toEqual(["c-a", "c-b"]);
     });
 
     // The budget and the balance are two different things. The old code set them
@@ -186,7 +189,7 @@ describe("First-time setup: opening balances", () => {
     });
 
     test("the record says when it happened and who did it", () => {
-      const recorded = saved.openingBalances[0];
+      const recorded = saved.adjustments[0];
       expect(recorded.date).toBe("2026-06-15");
       expect(recorded.userId).toBe("u-user1");
       expect(recorded.id).toEqual(expect.any(String));
@@ -226,7 +229,7 @@ describe("First-time setup: opening balances", () => {
     });
 
     test("nothing is recorded, because nothing happened", () => {
-      expect(saved.openingBalances).toEqual([]);
+      expect(saved.adjustments).toEqual([]);
       expect(saved.transactions).toEqual([]);
     });
 
@@ -263,7 +266,7 @@ describe("First-time setup: opening balances", () => {
 
       const saved = lastSave(onSave);
       expect(householdTotalOf(saved)).toBe(0);
-      expect(saved.openingBalances).toEqual([]);
+      expect(saved.adjustments).toEqual([]);
       expect(baseOf(saved, "c-a")).toBe(500);
     });
 
@@ -292,7 +295,7 @@ describe("First-time setup: opening balances", () => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
       const saved = lastSave(onSave);
       expect(householdTotalOf(saved)).toBe(0);
-      expect(saved.openingBalances).toEqual([]);
+      expect(saved.adjustments).toEqual([]);
       expect(screen.getByTestId("toast")).toHaveTextContent("Envelopes set up");
     });
   });
@@ -330,8 +333,11 @@ describe("First-time setup: opening balances", () => {
 
       const saved = lastSave(onSave);
       expect(householdTotalOf(saved)).toBe(500);
-      expect(saved.openingBalances[0].total).toBe(500);
-      expect(saved.openingBalances[0].entries).toEqual([{ catId: "c-a", amount: 400 }, { catId: "c-b", amount: 100 }]);
+      expect(saved.adjustments[0].amount).toBe(500);
+      expect(saved.adjustments[0].entries).toEqual([
+        { catId: "c-a", before: 0, amount: 400, after: 400 },
+        { catId: "c-b", before: 0, amount: 100, after: 100 },
+      ]);
       expect(balanceOf(saved, "c-a")).toBe(400);
       expect(balanceOf(saved, "c-b")).toBe(100);
       expect(incomeReported(saved)).toBe(0);
@@ -359,8 +365,8 @@ describe("First-time setup: opening balances", () => {
       await settle();
 
       const saved = lastSave(onSave);
-      expect(saved.openingBalances).toHaveLength(1);
-      expect(saved.openingBalances[0].total).toBe(500);
+      expect(saved.adjustments).toHaveLength(1);
+      expect(saved.adjustments[0].amount).toBe(500);
       // And the spend behaves like any other: it comes out of the envelope, so
       // the household total is the opening balance less what was spent.
       expect(balanceOf(saved, "c-a")).toBe(380);
@@ -369,8 +375,8 @@ describe("First-time setup: opening balances", () => {
 
     test("a record already in the file is carried forward, not dropped", async () => {
       const onSave = jest.fn();
-      const existing = [{ id: "ob-1", date: "2026-01-01", at: "2026-01-01T00:00:00Z", userId: "u-user1", total: 40, entries: [{ catId: "c-a", amount: 40 }] }];
-      renderFresh(onSave, { openingBalances: existing, categories: [salary, env("c-a", "Alpha", { baseAmount: 100, envelopeBalance: 40 })] });
+      const existing = [{ id: "ob-1", date: "2026-01-01", at: "2026-01-01T00:00:00Z", userId: "u-user1", kind: "opening", before: 0, after: 40, amount: 40, entries: [{ catId: "c-a", before: 0, amount: 40, after: 40 }] }];
+      renderFresh(onSave, { adjustments: existing, categories: [salary, env("c-a", "Alpha", { baseAmount: 100, envelopeBalance: 40 })] });
       await settle();
 
       fireEvent.click(screen.getByTestId("nav-transactions"));
@@ -381,7 +387,7 @@ describe("First-time setup: opening balances", () => {
       fireEvent.click(within(form).getByTestId("tx-save"));
       await settle();
 
-      expect(lastSave(onSave).openingBalances).toEqual(existing);
+      expect(lastSave(onSave).adjustments).toEqual(existing);
     });
 
     // Nothing migrates. A file written before this existed has no such key and
@@ -399,7 +405,7 @@ describe("First-time setup: opening balances", () => {
       fireEvent.click(within(form).getByTestId("tx-save"));
       await settle();
 
-      expect(lastSave(onSave).openingBalances).toEqual([]);
+      expect(lastSave(onSave).adjustments).toEqual([]);
     });
   });
 });

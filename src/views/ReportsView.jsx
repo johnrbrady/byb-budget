@@ -114,7 +114,107 @@ function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
   );
 }
 
-export function ReportsView({ transactions, categories, categoriesById, usersById, reportRange, setReportRange, handleExport, assets, onSaveAsset, onDeleteAsset, transfers, reconcileLog, unallocatedBalance, onSetUnallocated, onImportJSON, onNavigateToCategory, activeMonth, styles }) {
+// One entry in the balance-adjustment history: the deliberate, non-transaction
+// changes to what the household holds — envelopes opened at setup, all balances
+// reset, unallocated set by hand.
+//
+// `amount` is the household total's change, so it is the number shown biggest:
+// it is the answer to "where did my money go". `before`/`after` are the totals
+// either side. An entry migrated from the short-lived `openingBalances` log
+// carries neither, so both lines are conditional rather than assumed — the same
+// courtesy ReconcileEntry extends to runs recorded before movements existed.
+const ADJUSTMENT_LABELS = {
+  opening: "Envelopes opened with money already held",
+  reset: "All balances reset to zero",
+  "set-unallocated": "Unallocated set by hand",
+};
+
+function AdjustmentEntry({ entry, categoriesById, usersById, styles }) {
+  const [open, setOpen] = useState(false);
+  const entries = Array.isArray(entry.entries) ? entry.entries : [];
+  // Setting unallocated by hand moves no envelope, so its detail is the
+  // unallocated line alone — still worth expanding for, because the summary
+  // shows the household total rather than the balance that was actually typed.
+  const expandable = entries.length > 0 || !!entry.unallocated;
+  const name = (catId) => categoriesById?.[catId]?.name || "Deleted envelope";
+  const colour = (catId) => categoriesById?.[catId]?.colour || "#999";
+  const signed = (n) => `${n < 0 ? "−" : "+"}${fmtAUD(Math.abs(n))}`;
+  const hasTotals = typeof entry.before === "number" && typeof entry.after === "number";
+
+  const envRow = (m) => (
+    <div key={m.catId} data-testid={`adjustment-move-${entry.id}-${m.catId}`}
+      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", flexWrap: "wrap" }}>
+      <span style={styles.pill(colour(m.catId))}>{name(m.catId)}</span>
+      {typeof m.before === "number" && typeof m.after === "number" && (
+        <span style={{ fontSize: 12, color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
+          {fmtAUD(m.before)} → {fmtAUD(m.after)}
+        </span>
+      )}
+      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 13, minWidth: 88, textAlign: "right", color: m.amount < 0 ? styles.text : "var(--byb-ok)" }}>
+        {signed(m.amount)}
+      </span>
+    </div>
+  );
+
+  const summary = (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>
+          {expandable && <span style={{ color: styles.textMuted, marginRight: 6, fontSize: 11 }}>{open ? "▾" : "▸"}</span>}
+          {entry.date}
+          <span style={{ fontWeight: 400, color: styles.textMuted, marginLeft: 8, fontSize: 12 }}>
+            by {usersById?.[entry.userId]?.name || "Unknown"}
+          </span>
+        </span>
+        <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 13, fontWeight: 700, color: entry.amount < 0 ? "var(--byb-over)" : "var(--byb-ok)" }}
+          data-testid={`adjustment-amount-${entry.id}`}>
+          {signed(entry.amount || 0)}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>
+        {ADJUSTMENT_LABELS[entry.kind] || "Balance adjustment"}
+        {hasTotals && <> · total held {fmtAUD(entry.before)} → {fmtAUD(entry.after)}</>}
+      </div>
+    </>
+  );
+
+  const pad = styles.isMobile ? "10px 14px" : "12px 20px";
+  if (!expandable) {
+    return <div style={{ padding: pad, borderBottom: `1px solid ${styles.border}` }} data-testid={`adjustment-entry-${entry.id}`}>{summary}</div>;
+  }
+  return (
+    <div style={{ borderBottom: `1px solid ${styles.border}` }} data-testid={`adjustment-entry-${entry.id}`}>
+      <button
+        style={{ display: "block", width: "100%", padding: pad, background: "transparent", border: "none", color: styles.text, font: "inherit", textAlign: "left", cursor: "pointer" }}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        data-testid={`adjustment-toggle-${entry.id}`}
+      >
+        {summary}
+      </button>
+      {open && (
+        <div style={{ padding: styles.isMobile ? "0 14px 12px" : "0 20px 14px" }} data-testid={`adjustment-detail-${entry.id}`}>
+          {entries.length > 0 && (
+            <>
+              <div style={{ ...styles.label, marginTop: 6 }}>Envelopes</div>
+              {entries.map(envRow)}
+            </>
+          )}
+          {entry.unallocated && (
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 12, paddingTop: 8, borderTop: `1px solid ${styles.border}`, fontSize: 13 }}>
+              <span style={{ color: styles.textMuted }}>Unallocated</span>
+              <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
+                {fmtAUD(entry.unallocated.before)} → {fmtAUD(entry.unallocated.after)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ReportsView({ transactions, categories, categoriesById, usersById, reportRange, setReportRange, handleExport, assets, onSaveAsset, onDeleteAsset, transfers, reconcileLog, adjustments, unallocatedBalance, onSetUnallocated, onImportJSON, onNavigateToCategory, activeMonth, styles }) {
   const [assetForm, setAssetForm] = useState(null); // null=closed, {}=new, {id,...}=editing
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
@@ -509,6 +609,29 @@ My transactions and bank statement:
                 ))}
               </tbody>
             </table>
+          </div>
+        );
+      })()}
+
+      {/* Balance adjustments — every deliberate change to the household total
+          that was not a transaction.
+
+          Deliberately not filtered to the report range, unlike the transfers
+          above. These are rare and momentous, and the one that matters most —
+          the opening balance a household adopted the app with — is by
+          definition the oldest thing in the file. The default range starts on
+          1 January, so range-filtering would hide it for most of the app's
+          life, from the very report that exists to answer "where did my money
+          come from". Capped instead, the way the reconcile history is. */}
+      <div style={{ ...styles.sectionTitle, display: "flex", alignItems: "center", gap: 6 }}><IconHistory size={14} /> Balance adjustments</div>
+      {(() => {
+        const entries = (adjustments || []).slice(0, 24);
+        if (entries.length === 0) return <div style={{ ...styles.card, color: styles.textMuted, fontSize: 13 }} data-testid="adjustments-empty">No balance adjustments. Your envelopes only change through transactions, transfers and reconciles.</div>;
+        return (
+          <div style={{ ...styles.card, padding: 0 }}>
+            {entries.map((e) => (
+              <AdjustmentEntry key={e.id} entry={e} categoriesById={categoriesById} usersById={usersById} styles={styles} />
+            ))}
           </div>
         );
       })()}

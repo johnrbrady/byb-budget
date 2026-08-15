@@ -29,6 +29,72 @@ export function householdTotal({ categories, unallocatedBalance }) {
   return (categories || []).reduce((s, c) => s + balanceOf(c), 0) + (unallocatedBalance || 0);
 }
 
+// ── Adjustments ─────────────────────────────────────────────────────────────
+//
+// Three things in this app deliberately change the household total without a
+// transaction behind them: opening the envelopes at setup, resetting every
+// balance to zero, and typing a new unallocated balance. Reconciles and
+// transfers do not belong here — they move money between places and conserve
+// the total, which is why they keep the logs they already have.
+//
+// Each returns the new ledger together with the record of what it did, out of
+// one pass, the same way `reconcileLedger` returns its movements: `before` and
+// `after` are the household total either side, and `amount` is the difference.
+// `amount` is measured off the ledger rather than summed from the detail, so a
+// record can never claim a movement the balances did not make. Nothing is
+// rounded — the record has to be the change, not a near-enough copy of it.
+//
+// `entries` uses the same shape as reconcile movements — `{ catId, before,
+// amount, after }` — so the three logs read alike, and envelopes that did not
+// move are left out, because a zero row says nothing.
+const adjustment = (before, next, detail) => {
+  const after = householdTotal(next);
+  return { ledger: next, before, after, amount: after - before, ...detail };
+};
+
+/**
+ * Reset every balance to zero.
+ *
+ * This is the "start over" path in Settings, and unlike everything else here it
+ * destroys money rather than moving it: `amount` is the whole household total,
+ * negated. `entries` is what was destroyed, envelope by envelope, and
+ * `unallocated` is the rest of it — together they are the only account of a
+ * balance that no longer exists anywhere.
+ *
+ * Every category is written back at zero, including ones already there, so the
+ * post-reset ledger is exactly what it has always been. Only the record is
+ * selective.
+ */
+export function applyResetBalances({ categories, unallocatedBalance }) {
+  const before = householdTotal({ categories, unallocatedBalance });
+  const entries = [];
+  const next = (categories || []).map((c) => {
+    const held = balanceOf(c);
+    if (held !== 0) entries.push({ catId: c.id, before: held, amount: -held, after: 0 });
+    return { ...c, envelopeBalance: 0 };
+  });
+  return adjustment(before, { categories: next, unallocatedBalance: 0 }, {
+    unallocated: { before: unallocatedBalance || 0, after: 0 },
+    entries,
+  });
+}
+
+/**
+ * Set the unallocated balance to a stated figure.
+ *
+ * Envelopes are untouched, so the household total moves by exactly what
+ * unallocated moved by — `entries` is empty because no envelope has anything to
+ * say. `unallocated` carries the before and after that the change is really
+ * about.
+ */
+export function applySetUnallocated({ categories, unallocatedBalance }, target) {
+  const before = householdTotal({ categories, unallocatedBalance });
+  return adjustment(before, { categories, unallocatedBalance: target }, {
+    unallocated: { before: unallocatedBalance || 0, after: target },
+    entries: [],
+  });
+}
+
 /**
  * Apply (`factor: 1`) or reverse (`factor: -1`) a transaction's effect.
  *
@@ -147,7 +213,7 @@ export function applyEnvelopeFill({ categories, unallocatedBalance }, catId, amo
  * disagree. `unallocatedBalance` is passed through untouched: the money is being
  * declared as already sitting in the envelopes, not as a pile being allocated.
  *
- * Nothing is rounded. `total` is the number the caller stores as its account of
+ * Nothing is rounded. `amount` is the number the caller stores as its account of
  * the household total's change, so it has to be that change and not a
  * near-enough copy of it.
  *
@@ -157,18 +223,16 @@ export function applyEnvelopeFill({ categories, unallocatedBalance }, catId, amo
  */
 export function applyOpeningBalances({ categories, unallocatedBalance }, amountsMap) {
   const amounts = amountsMap || {};
+  const before = householdTotal({ categories, unallocatedBalance });
   const entries = [];
   const next = (categories || []).map((c) => {
     const amount = amounts[c.id];
     if (typeof amount !== "number" || !(amount > 0)) return c;
-    entries.push({ catId: c.id, amount });
-    return { ...c, envelopeBalance: balanceOf(c) + amount };
+    const held = balanceOf(c);
+    entries.push({ catId: c.id, before: held, amount, after: held + amount });
+    return { ...c, envelopeBalance: held + amount };
   });
-  return {
-    ledger: { categories: next, unallocatedBalance },
-    entries,
-    total: entries.reduce((s, e) => s + e.amount, 0),
-  };
+  return adjustment(before, { categories: next, unallocatedBalance }, { entries });
 }
 
 /**

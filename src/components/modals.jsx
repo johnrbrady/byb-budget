@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { askConfirm } from "./ConfirmDialog.jsx";
 import { IconMoon, IconSun, IconClose } from "./Icons.jsx";
 
 export function WelcomeModal({ onClose, styles }) {
@@ -246,20 +245,16 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
         <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 10 }}>
           Reset all envelope and unallocated balances to zero. Transactions and history are not affected.
         </div>
+        {/* The confirmation lives in BudgetApp's resetAllBalances, not here.
+            This modal has no access to the balances, so the question it used to
+            ask could only ever be a generic one — the same words whether the
+            household held nothing or held thousands. Asking where the ledger is
+            lets the question state what is actually about to be destroyed.
+            `onResetBalances` resolves false when the household declines, which
+            is what keeps Settings open behind the dialog. */}
         <button
           style={{ ...styles.buttonDanger, width: "100%", padding: "12px 14px", fontSize: 13, fontWeight: 600 }}
-          onClick={async () => {
-            const ok = await askConfirm({
-              title: "Reset all balances to zero?",
-              message: "This will clear every envelope balance and your unallocated amount. Your transaction history will not be affected. This cannot be undone.",
-              confirmLabel: "Reset balances",
-              danger: true,
-            });
-            if (ok) {
-              onResetBalances();
-              onClose();
-            }
-          }}
+          onClick={async () => { if (await onResetBalances()) onClose(); }}
         >
           Reset all balances to zero
         </button>

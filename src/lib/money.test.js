@@ -8,6 +8,8 @@ import {
   removeEnvelope,
   reconcileLedger,
   applyOpeningBalances,
+  applyResetBalances,
+  applySetUnallocated,
 } from "./money.js";
 
 // The rule every one of these functions serves: household money is
@@ -513,19 +515,24 @@ describe("reconcileLedger", () => {
 // DEF-013 — the first-time wizard raised the household total by the sum of
 // every base amount and recorded nothing.
 //
-// This is the one function in the module that is ALLOWED to change the
-// household total without a transaction, because a household adopting the app
-// really does already hold this money. So the invariant it has to serve is a
-// different one, and a stricter one: the total moves by exactly `total`, and
+// This is one of the three functions in the module that are ALLOWED to change
+// the household total without a transaction, because a household adopting the
+// app really does already hold this money. So the invariant it has to serve is a
+// different one, and a stricter one: the total moves by exactly `amount`, and
 // `entries` accounts for every cent of that move, envelope by envelope.
+//
+// `amount` was called `total` when this was a log of its own (Package 8). It is
+// now one `kind` of adjustment among three, all reporting their change to the
+// household total under the same name, and all carrying per-envelope detail in
+// the same `{ catId, before, amount, after }` shape reconcile movements use.
 // ─────────────────────────────────────────────────────────────────────────────
 describe("applyOpeningBalances", () => {
   // The record and the balances have to be the same arithmetic. This checks
   // both directions: the total explains the household's move, and the entries
   // explain each envelope's.
   const expectEntriesExplainLedger = (before, result) => {
-    expect(total(result.ledger) - total(before)).toBeCloseTo(result.total, 10);
-    expect(result.entries.reduce((s, e) => s + e.amount, 0)).toBeCloseTo(result.total, 10);
+    expect(total(result.ledger) - total(before)).toBeCloseTo(result.amount, 10);
+    expect(result.entries.reduce((s, e) => s + e.amount, 0)).toBeCloseTo(result.amount, 10);
     for (const c of before.categories) {
       const entry = result.entries.find((e) => e.catId === c.id);
       const moved = balanceOf(result.ledger, c.id) - (c.envelopeBalance || 0);
@@ -540,7 +547,7 @@ describe("applyOpeningBalances", () => {
     const before = ledgerOf(0, envelope("a", 0), envelope("b", 0), envelope("c", 0));
     const result = applyOpeningBalances(before, { a: 500, b: 300, c: 200 });
 
-    expect(result.total).toBe(1000);
+    expect(result.amount).toBe(1000);
     expect(balanceOf(result.ledger, "a")).toBe(500);
     expect(balanceOf(result.ledger, "b")).toBe(300);
     expect(balanceOf(result.ledger, "c")).toBe(200);
@@ -553,7 +560,10 @@ describe("applyOpeningBalances", () => {
     const before = ledgerOf(0, envelope("a", 0), envelope("b", 0));
     const result = applyOpeningBalances(before, { a: 500, b: 300 });
 
-    expect(result.entries).toEqual([{ catId: "a", amount: 500 }, { catId: "b", amount: 300 }]);
+    expect(result.entries).toEqual([
+      { catId: "a", before: 0, amount: 500, after: 500 },
+      { catId: "b", before: 0, amount: 300, after: 300 },
+    ]);
   });
 
   test("an envelope not named in the map is untouched and unrecorded", () => {
@@ -571,8 +581,8 @@ describe("applyOpeningBalances", () => {
     const before = ledgerOf(0, envelope("a", 0), envelope("b", 0), envelope("c", 0));
     const result = applyOpeningBalances(before, { a: 0, b: -50, c: 200 });
 
-    expect(result.total).toBe(200);
-    expect(result.entries).toEqual([{ catId: "c", amount: 200 }]);
+    expect(result.amount).toBe(200);
+    expect(result.entries).toEqual([{ catId: "c", before: 0, amount: 200, after: 200 }]);
     expect(balanceOf(result.ledger, "b")).toBe(0);
     expectEntriesExplainLedger(before, result);
   });
@@ -581,14 +591,14 @@ describe("applyOpeningBalances", () => {
     const before = ledgerOf(120, envelope("a", 40));
     const result = applyOpeningBalances(before, {});
 
-    expect(result.total).toBe(0);
+    expect(result.amount).toBe(0);
     expect(result.entries).toEqual([]);
     expect(total(result.ledger)).toBe(total(before));
   });
 
   test("a missing map is treated as an empty one rather than throwing", () => {
     const before = ledgerOf(0, envelope("a", 0));
-    expect(applyOpeningBalances(before, undefined).total).toBe(0);
+    expect(applyOpeningBalances(before, undefined).amount).toBe(0);
   });
 
   // Opening balances add to what is there. The wizard only offers itself on a
@@ -598,7 +608,7 @@ describe("applyOpeningBalances", () => {
     const result = applyOpeningBalances(before, { a: 25 });
 
     expect(balanceOf(result.ledger, "a")).toBe(100);
-    expect(result.total).toBe(25);
+    expect(result.amount).toBe(25);
     expectEntriesExplainLedger(before, result);
   });
 
@@ -616,7 +626,7 @@ describe("applyOpeningBalances", () => {
     const before = ledgerOf(0, envelope("a", 0), envelope("b", 0), envelope("c", 0));
     const result = applyOpeningBalances(before, { a: 33.33, b: 12.11, c: 0.07 });
 
-    expect(total(result.ledger) - total(before)).toBe(result.total);
+    expect(total(result.ledger) - total(before)).toBe(result.amount);
     expectEntriesExplainLedger(before, result);
   });
 
@@ -626,5 +636,154 @@ describe("applyOpeningBalances", () => {
 
     expect(balanceOf(before, "a")).toBe(40);
     expect(before.unallocatedBalance).toBe(10);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The other two ways the household total changes without a transaction.
+//
+// Both are legitimate — starting over and correcting against a bank statement
+// are things a household genuinely needs — and both used to happen with no
+// record at all. The invariant here is the one that makes a record worth
+// having: `amount` is the household total's ACTUAL change, measured off the
+// ledger, and `before`/`after` are the real totals either side. A record that
+// disagrees with the balances is worse than none, because it will be believed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Asserted for every adjustment, whatever its kind: the arithmetic and the
+// account of it are the same pass, so they cannot disagree.
+const expectRecordMatchesLedger = (before, result) => {
+  expect(result.before).toBe(total(before));
+  expect(result.after).toBe(total(result.ledger));
+  expect(result.amount).toBe(result.after - result.before);
+  expect(total(result.ledger) - total(before)).toBeCloseTo(result.amount, 10);
+};
+
+describe("applyResetBalances", () => {
+  test("destroys the household total and says so, envelope by envelope", () => {
+    const before = ledgerOf(250, envelope("a", 640), envelope("b", 110));
+    const result = applyResetBalances(before);
+
+    expect(result.before).toBe(1000);
+    expect(result.after).toBe(0);
+    expect(result.amount).toBe(-1000);
+    expect(result.entries).toEqual([
+      { catId: "a", before: 640, amount: -640, after: 0 },
+      { catId: "b", before: 110, amount: -110, after: 0 },
+    ]);
+    expect(result.unallocated).toEqual({ before: 250, after: 0 });
+    expectRecordMatchesLedger(before, result);
+  });
+
+  test("every balance really is zero afterwards, including the ones already there", () => {
+    const before = ledgerOf(250, envelope("a", 640), envelope("b", 0));
+    const result = applyResetBalances(before);
+
+    expect(balanceOf(result.ledger, "a")).toBe(0);
+    expect(balanceOf(result.ledger, "b")).toBe(0);
+    expect(result.ledger.unallocatedBalance).toBe(0);
+  });
+
+  // A zero row says nothing, and the log has to be readable.
+  test("an envelope that held nothing is not recorded as having lost nothing", () => {
+    const result = applyResetBalances(ledgerOf(0, envelope("a", 640), envelope("b", 0)));
+    expect(result.entries.map((e) => e.catId)).toEqual(["a"]);
+  });
+
+  // Overdrawn envelopes are money the household has already spent. Clearing
+  // them RAISES the total, and the record has to admit that rather than
+  // assuming a reset can only ever destroy.
+  test("clearing an overdrawn envelope raises the total, and the record is signed accordingly", () => {
+    const before = ledgerOf(0, envelope("a", 100), envelope("b", -300));
+    const result = applyResetBalances(before);
+
+    expect(result.before).toBe(-200);
+    expect(result.after).toBe(0);
+    expect(result.amount).toBe(200);
+    expect(result.entries).toEqual([
+      { catId: "a", before: 100, amount: -100, after: 0 },
+      { catId: "b", before: -300, amount: 300, after: 0 },
+    ]);
+    expectRecordMatchesLedger(before, result);
+  });
+
+  // The household total can be zero while envelopes hold offsetting balances.
+  // That is still a real reset with something to record.
+  test("a zero total with money in the envelopes still records what it cleared", () => {
+    const before = ledgerOf(0, envelope("a", 500), envelope("b", -500));
+    const result = applyResetBalances(before);
+
+    expect(result.amount).toBe(0);
+    expect(result.entries).toHaveLength(2);
+    expectRecordMatchesLedger(before, result);
+  });
+
+  test("the input ledger is not mutated", () => {
+    const before = ledgerOf(250, envelope("a", 640));
+    applyResetBalances(before);
+
+    expect(balanceOf(before, "a")).toBe(640);
+    expect(before.unallocatedBalance).toBe(250);
+  });
+});
+
+describe("applySetUnallocated", () => {
+  test("moves the household total by exactly what unallocated moved by", () => {
+    const before = ledgerOf(250, envelope("a", 640), envelope("b", 110));
+    const result = applySetUnallocated(before, 9500);
+
+    expect(result.before).toBe(1000);
+    expect(result.after).toBe(10250);
+    expect(result.amount).toBe(9250);
+    expect(result.unallocated).toEqual({ before: 250, after: 9500 });
+    expectRecordMatchesLedger(before, result);
+  });
+
+  test("no envelope is touched, so there is nothing to record about them", () => {
+    const before = ledgerOf(250, envelope("a", 640));
+    const result = applySetUnallocated(before, 10);
+
+    expect(result.entries).toEqual([]);
+    expect(balanceOf(result.ledger, "a")).toBe(640);
+  });
+
+  test("a reduction is recorded as a negative change", () => {
+    const before = ledgerOf(250, envelope("a", 640));
+    const result = applySetUnallocated(before, 100);
+
+    expect(result.amount).toBe(-150);
+    expectRecordMatchesLedger(before, result);
+  });
+
+  test("setting it to what it already is moves nothing", () => {
+    const before = ledgerOf(250, envelope("a", 640));
+    const result = applySetUnallocated(before, 250);
+
+    expect(result.amount).toBe(0);
+    expect(total(result.ledger)).toBe(total(before));
+  });
+
+  test("a negative balance is a statement the household may make, and it balances", () => {
+    const before = ledgerOf(250, envelope("a", 640));
+    const result = applySetUnallocated(before, -80);
+
+    expect(result.after).toBe(560);
+    expect(result.amount).toBe(-330);
+    expectRecordMatchesLedger(before, result);
+  });
+
+  test("cents survive: the recorded change is the change, not a rounded copy", () => {
+    const before = ledgerOf(250.15, envelope("a", 33.33));
+    const result = applySetUnallocated(before, 250.4);
+
+    expect(total(result.ledger) - total(before)).toBe(result.amount);
+    expectRecordMatchesLedger(before, result);
+  });
+
+  test("the input ledger is not mutated", () => {
+    const before = ledgerOf(250, envelope("a", 640));
+    applySetUnallocated(before, 9500);
+
+    expect(before.unallocatedBalance).toBe(250);
   });
 });
