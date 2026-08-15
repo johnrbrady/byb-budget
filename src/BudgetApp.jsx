@@ -162,13 +162,22 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   //
   // The gesture itself lives in useSwipeNavigation, which tracks the finger and
   // settles the view. All this decides is when the shell owns the gesture:
-  // never over a modal, and never inside a single envelope's history, which has
-  // its own swipe-back.
-  const inEnvelopeContext = view === "transactions" && txFilters.categoryId !== "all";
+  // never over a modal.
+  //
+  // An envelope drill-down used to be excluded here too, because the list
+  // substituted a swipe of its own — leftwards only, meaning "leave the
+  // envelope". So the same gesture did two different things depending on where
+  // the user was, and rightwards did nothing at all, which is what the
+  // stakeholder reported as a swipe that "works sometimes". A swipe now means
+  // one thing everywhere: change tab. Leaving an envelope is a control on
+  // screen (DEC-010).
+  //
+  // Sheets and other in-view overlays suppress the gesture themselves, through
+  // the `data-swipe-ignore` guard useSwipeNavigation already honours.
   const anyModalOpen = settingsOpen || welcomeOpen || showNamePrompt;
 
   const swipe = useSwipeNavigation({
-    enabled: !anyModalOpen && !inEnvelopeContext,
+    enabled: !anyModalOpen,
     index: VIEW_ORDER.indexOf(view),
     count: VIEW_ORDER.length,
     // The gesture has already moved the view; the mount animation would replay

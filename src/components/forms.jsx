@@ -2,7 +2,11 @@ import React, { useState } from "react";
 import { PALETTE, SAVINGS_CAT } from "../lib/constants.js";
 import { fmtAUD, todayISO } from "../lib/utils.js";
 
-export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, styles, defaultCategoryId, defaultType }) {
+// `style` overrides the form's own container styling only — it is there so the
+// same form can be a card in the page or the body of a bottom sheet without a
+// second copy of it existing. Nothing below it reads `style`; the allocation
+// rules are untouched by it.
+export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, styles, defaultCategoryId, defaultType, style }) {
   const defaultCat = defaultCategoryId ? categories.find((c) => c.id === defaultCategoryId) : null;
   // `allocations` records where an income transaction's money actually went and
   // is the only thing the balance arithmetic reads, so the "Allocate to
@@ -55,7 +59,7 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
   const isIncome = form.type === "income";
   const cols = mobile ? "1fr 1fr" : (isIncome && !isTransfer) ? "repeat(6, 1fr)" : "repeat(5, 1fr)";
   return (
-    <form className="byb-panel" onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: cols, gap: 10 }} data-testid="tx-form">
+    <form className="byb-panel" onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: cols, gap: 10, ...style }} data-testid="tx-form">
       <div style={mobile ? { gridColumn: "span 2" } : {}}><div style={styles.label}>Date</div><input style={styles.input} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
       <div>
         <div style={styles.label}>Type</div>

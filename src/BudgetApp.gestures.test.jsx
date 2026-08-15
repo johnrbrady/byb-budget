@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, act, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import BudgetApp from "./BudgetApp.jsx";
 
@@ -68,6 +68,13 @@ function drag(target, { from = 300, to = 120, y = 400, steps = 4 } = {}) {
 }
 
 const goToEnvelopes = () => fireEvent.click(screen.getByTestId("nav-categories"));
+
+// A committed swipe navigates on a timer (useSwipeNavigation times the exit off
+// the finger's speed), and jest.setup.js leaves the timer APIs real. Flushing
+// microtasks therefore proves nothing about a swipe that should NOT have
+// happened — it has not happened yet either way. Waiting past the longest exit
+// is what makes "it did not navigate" mean something.
+const pastSettle = () => new Promise((r) => setTimeout(r, 400));
 
 const dragHandleIn = (card) => card.querySelector("[aria-label='Drag to reorder']");
 
@@ -181,6 +188,34 @@ describe("Swipe between tabs", () => {
     drag(card, { from: 300, to: 280, steps: 2 });
     await settle();
     expect(currentView()).toBe("categories");
+  });
+
+  // The shell hands the gesture back while a modal owns the screen. (The welcome
+  // modal, not Settings: SettingsModal reads the Vite-injected __BUILD_TIME__,
+  // which does not exist under Jest, so it cannot be rendered here at all.)
+  test("a swipe while a modal is open does not change tab", async () => {
+    localStorage.removeItem("byb_welcomed");
+    render(
+      <BudgetApp
+        onSave={jest.fn()}
+        initialData={{
+          users: [{ id: "u-user1", name: "Tester", role: "owner", colour: "#7FB069" }],
+          transactions: [], recurring: [], assets: [], transfers: [], reconcileLog: [],
+          unallocatedBalance: 0, categories: [env("c-a", "Alpha")],
+        }}
+      />
+    );
+    await settle();
+    expect(screen.getByText(/Agree and let's get started/)).toBeInTheDocument();
+    expect(currentView()).toBe("dashboard");
+
+    const track = document.querySelector(".byb-swipe-track");
+    drag(swipeSurface());
+    // The shell never took the gesture, so the view was never moved at all…
+    expect(track.style.transform).toBe("");
+    // …and it is still on the same tab once a settle would have finished.
+    await pastSettle();
+    expect(currentView()).toBe("dashboard");
   });
 
   test("swiping past the last tab stays on the last tab", async () => {
@@ -314,24 +349,6 @@ describe("Swipe between tabs", () => {
     expect(currentView()).toBe("categories");
   });
 
-  test("the envelope-context swipe-back still leaves the envelope, without changing tab", async () => {
-    renderApp({
-      transactions: [{ id: "t1", date: "2026-06-02", amount: 25, type: "expense", categoryId: "c-a", description: "Milk", isRecurring: false, recurringId: null, addedBy: "u-user1", createdAt: "2026-06-02T00:00:00Z" }],
-    });
-    await settle();
-    fireEvent.click(screen.getByTestId("nav-transactions"));
-    fireEvent.click(screen.getByText("Filter"));
-    fireEvent.change(screen.getByTestId("tx-filter-category"), { target: { value: "c-a" } });
-    expect(screen.getByTestId("tx-scope")).toHaveTextContent("All months");
-
-    drag(screen.getByTestId("tx-table"));
-    await settle();
-    // Back to all categories, still on Transactions — the shell swipe must not
-    // have fired as well and thrown the user onto another tab.
-    expect(currentView()).toBe("transactions");
-    await waitFor(() => expect(screen.getByTestId("tx-filter-category")).toHaveValue("all"));
-  });
-
   test("a long press on an envelope card still opens quick actions", async () => {
     jest.useFakeTimers({ now: new Date("2026-06-15T09:00:00Z") });
     try {
@@ -346,5 +363,351 @@ describe("Swipe between tabs", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEF-015 — the swipe used to die inside an envelope drill-down.
+//
+// TransactionsView substituted its own gesture there: swipe-left cleared the
+// category filter, swipe-right did nothing at all. From the stakeholder's seat
+// that is a swipe that "works sometimes and doesn't work sometimes". A swipe now
+// means one thing everywhere — change tab — and leaving an envelope is a control
+// on screen (DEC-010).
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Swipe inside an envelope drill-down", () => {
+  beforeEach(() => { global.setMobileViewport(); });
+
+  const spend = (id, date, amount, description, categoryId = "c-a") => ({
+    id, date, amount, type: "expense", categoryId, description,
+    isRecurring: false, recurringId: null, addedBy: "u-user1", createdAt: `${date}T00:00:00Z`,
+  });
+
+  const withHistory = () => renderApp({
+    transactions: [
+      spend("t-jun", "2026-06-02", 60, "June shop"),
+      spend("t-may", "2026-05-04", 55, "May shop"),
+      spend("t-apr", "2026-04-04", 45, "April shop"),
+    ],
+  });
+
+  // The stakeholder's own route in: tap the envelope on the Dashboard.
+  const drillIntoAlpha = () => fireEvent.click(screen.getByText("Alpha"));
+
+  test("swiping left inside an envelope changes tab, exactly as it does outside one", async () => {
+    withHistory();
+    await settle();
+    drillIntoAlpha();
+    expect(currentView()).toBe("transactions");
+    expect(screen.getByTestId("tx-scope")).toHaveTextContent("All months");
+
+    drag(screen.getByTestId("tx-table"));
+    await waitFor(() => expect(currentView()).toBe("categories"));
+  });
+
+  test("swiping right inside an envelope goes back a tab", async () => {
+    withHistory();
+    await settle();
+    drillIntoAlpha();
+
+    drag(screen.getByTestId("tx-table"), { from: 120, to: 300 });
+    await waitFor(() => expect(currentView()).toBe("dashboard"));
+  });
+
+  test("a swipe that starts on a transaction row navigates too", async () => {
+    withHistory();
+    await settle();
+    drillIntoAlpha();
+
+    drag(screen.getByTestId("tx-row-t-jun"));
+    await waitFor(() => expect(currentView()).toBe("categories"));
+  });
+
+  test("the way out of the envelope is a control on screen, not a hidden gesture", async () => {
+    withHistory();
+    await settle();
+    drillIntoAlpha();
+
+    // No instruction to swipe, because swiping no longer does this.
+    expect(screen.queryByText(/Swipe left to go back/)).not.toBeInTheDocument();
+
+    const back = screen.getByTestId("tx-exit-envelope");
+    expect(back).toBeInTheDocument();
+    fireEvent.click(back);
+    await waitFor(() => expect(screen.getByTestId("tx-scope")).not.toHaveTextContent("All months"));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEF-016 — tapping a transaction appeared to do nothing.
+//
+// The tap always opened the editor; the editor was rendered above the list, so
+// a user scrolled down through months of history got a form off the top of his
+// screen. On a phone the editor is now a bottom sheet over the list (DEC-011).
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Tapping a transaction on a phone", () => {
+  beforeEach(() => { global.setMobileViewport(); });
+
+  const spend = (id, date, amount, description) => ({
+    id, date, amount, type: "expense", categoryId: "c-a", description,
+    isRecurring: false, recurringId: null, addedBy: "u-user1", createdAt: `${date}T00:00:00Z`,
+  });
+
+  // Three months of history, so the row being tapped is a long way down the page.
+  const history = [
+    spend("t-jun-1", "2026-06-14", 60, "June shop"),
+    spend("t-jun-2", "2026-06-08", 22, "Bakery"),
+    spend("t-jun-3", "2026-06-02", 31, "Butcher"),
+    spend("t-may-1", "2026-05-20", 55, "May shop"),
+    spend("t-may-2", "2026-05-11", 18, "Market"),
+    spend("t-apr-1", "2026-04-18", 47, "April shop"),
+    spend("t-apr-2", "2026-04-03", 12, "Corner store"),
+  ];
+
+  const renderHistory = () => renderApp({ transactions: history });
+  const drillIntoAlpha = () => fireEvent.click(screen.getByText("Alpha"));
+
+  // Where the list sits among its siblings. An editor inserted into the flow
+  // above the list pushes it down — which is the defect, seen structurally.
+  const listIndex = () => {
+    const list = screen.getByTestId("tx-table");
+    return Array.prototype.indexOf.call(list.parentElement.children, list);
+  };
+
+  test("the editor opens over the list rather than above it", async () => {
+    renderHistory();
+    await settle();
+    drillIntoAlpha();
+
+    const before = listIndex();
+    // The last row on screen — the far end of the scroll, where the stakeholder was.
+    fireEvent.click(screen.getByTestId("tx-row-t-apr-2"));
+
+    const sheet = screen.getByTestId("tx-edit-sheet");
+    expect(sheet).toBeInTheDocument();
+    // Fixed to the viewport, so it is over the list wherever the list is scrolled to…
+    expect(sheet.style.position).toBe("fixed");
+    // …and it is the app's own sheet, not a second one: byb-overlay/byb-sheet are
+    // what carry the entrance animation in global.css, and therefore what the
+    // prefers-reduced-motion rule there already reaches. (jsdom loads no CSS, so
+    // the class is the only part of that this can assert.)
+    expect(sheet.className).toContain("byb-overlay");
+    expect(sheet.querySelector(".byb-sheet")).not.toBeNull();
+    // …and the list has not been pushed down to make room for it.
+    expect(listIndex()).toBe(before);
+    // The form comes after the row in the document, not above the whole list.
+    const form = screen.getByTestId("tx-form");
+    const row = screen.getByTestId("tx-row-t-apr-2");
+    expect(form.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
+  // The FAB is fixed to the screen, so it is reachable from anywhere in the
+  // history — and it opened the same off-screen form the tap did. Adding uses
+  // the sheet too; one form, one presentation, on the viewport that needs it.
+  test("the add button opens the same sheet, with nothing to delete in it", async () => {
+    renderHistory();
+    await settle();
+    drillIntoAlpha();
+    fireEvent.click(screen.getByTestId("add-tx"));
+
+    expect(screen.getByTestId("tx-edit-sheet")).toBeInTheDocument();
+    expect(screen.queryByTestId("tx-sheet-delete")).not.toBeInTheDocument();
+    // Adding from inside an envelope still lands in that envelope.
+    expect(within(screen.getByTestId("tx-form")).getByTestId("tx-category")).toHaveValue("c-a");
+  });
+
+  test("the sheet opens on the tapped transaction's own values", async () => {
+    renderHistory();
+    await settle();
+    drillIntoAlpha();
+    fireEvent.click(screen.getByTestId("tx-row-t-may-2"));
+
+    const form = screen.getByTestId("tx-form");
+    expect(form.querySelector('input[type="date"]')).toHaveValue("2026-05-11");
+    expect(within(form).getByDisplayValue("Expense")).toBeInTheDocument();
+    expect(within(form).getByTestId("tx-amount")).toHaveValue(18);
+    expect(within(form).getByTestId("tx-description")).toHaveValue("Market");
+    expect(within(form).getByTestId("tx-category")).toHaveValue("c-a");
+  });
+
+  test("editing and saving from the sheet updates the transaction and closes it", async () => {
+    const onSave = jest.fn();
+    render(
+      <BudgetApp
+        onSave={onSave}
+        initialData={{
+          users: baseUsers, transactions: history, recurring: [], assets: [], transfers: [],
+          reconcileLog: [], unallocatedBalance: 0,
+          categories: [env("c-a", "Alpha"), env("c-b", "Bravo"), env("c-c", "Charlie")],
+        }}
+      />
+    );
+    await settle();
+    drillIntoAlpha();
+    fireEvent.click(screen.getByTestId("tx-row-t-may-2"));
+
+    const form = screen.getByTestId("tx-form");
+    fireEvent.change(within(form).getByTestId("tx-description"), { target: { value: "Farmers market" } });
+    fireEvent.change(within(form).getByTestId("tx-amount"), { target: { value: "24" } });
+    fireEvent.click(within(form).getByTestId("tx-save"));
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    const tx = saved.transactions.find((t) => t.id === "t-may-2");
+    expect(tx.description).toBe("Farmers market");
+    expect(tx.amount).toBe(24);
+    expect(screen.queryByTestId("tx-edit-sheet")).not.toBeInTheDocument();
+  });
+
+  test("deleting from the sheet asks first, then removes the row and closes the sheet", async () => {
+    renderHistory();
+    await settle();
+    drillIntoAlpha();
+    fireEvent.click(screen.getByTestId("tx-row-t-may-2"));
+
+    fireEvent.click(screen.getByTestId("tx-sheet-delete"));
+    const ok = await screen.findByTestId("confirm-ok");
+    fireEvent.click(ok);
+    await settle();
+
+    expect(screen.queryByTestId("tx-row-t-may-2")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tx-edit-sheet")).not.toBeInTheDocument();
+  });
+
+  test("declining the delete keeps both the transaction and the open sheet", async () => {
+    renderHistory();
+    await settle();
+    drillIntoAlpha();
+    fireEvent.click(screen.getByTestId("tx-row-t-may-2"));
+
+    fireEvent.click(screen.getByTestId("tx-sheet-delete"));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByText("Cancel"));
+    await settle();
+
+    expect(screen.getByTestId("tx-row-t-may-2")).toBeInTheDocument();
+    expect(screen.getByTestId("tx-edit-sheet")).toBeInTheDocument();
+  });
+
+  test("a swipe over the open sheet does not change tab underneath it", async () => {
+    renderHistory();
+    await settle();
+    drillIntoAlpha();
+    fireEvent.click(screen.getByTestId("tx-row-t-may-2"));
+
+    const track = document.querySelector(".byb-swipe-track");
+    drag(screen.getByTestId("tx-edit-sheet"));
+    // A sheet is a modal: the shell never took the gesture, so nothing moved…
+    expect(track.style.transform).toBe("");
+    // …and the tab underneath is still the one the sheet was opened from.
+    await pastSettle();
+    expect(currentView()).toBe("transactions");
+    expect(screen.getByTestId("tx-edit-sheet")).toBeInTheDocument();
+  });
+
+  // ── The Package 3 guard, on the path this package adds ─────────────────────
+  //
+  // DEF-004 was an income edit silently draining an envelope. The desktop form
+  // is covered in BudgetApp.test.jsx; the sheet is a second door onto the same
+  // form and has to be just as safe.
+  test("editing an allocated income's description through the sheet moves no money", async () => {
+    const onSave = jest.fn();
+    render(
+      <BudgetApp
+        onSave={onSave}
+        initialData={{
+          users: baseUsers, recurring: [], assets: [], transfers: [], reconcileLog: [],
+          unallocatedBalance: 50,
+          categories: [
+            { id: "c-inc", name: "Salary", type: "income", colour: "#7FB069", monthlyBudget: null },
+            env("c-a", "Alpha", { envelopeBalance: 300 }),
+            env("c-b", "Bravo", { envelopeBalance: 200 }),
+          ],
+          transactions: [{
+            id: "t-inc", date: "2026-06-01", amount: 300, type: "income", categoryId: "c-inc",
+            description: "Payslip", isRecurring: false, recurringId: null,
+            allocations: [{ catId: "c-a", amount: 300 }], addedBy: "u-user1", createdAt: "2026-06-01T00:00:00Z",
+          }],
+        }}
+      />
+    );
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByTestId("tx-row-t-inc"));
+
+    const form = screen.getByTestId("tx-form");
+    expect(within(form).getByTestId("tx-allocate-envelope")).toHaveValue("c-a");
+    fireEvent.change(within(form).getByTestId("tx-description"), { target: { value: "Payslip — June" } });
+    fireEvent.click(within(form).getByTestId("tx-save"));
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    expect(saved.transactions.find((t) => t.id === "t-inc").allocations).toEqual([{ catId: "c-a", amount: 300 }]);
+    expect(saved.categories.find((c) => c.id === "c-a").envelopeBalance).toBe(300);
+    expect(saved.categories.find((c) => c.id === "c-b").envelopeBalance).toBe(200);
+    expect(saved.unallocatedBalance).toBe(50);
+  });
+
+  test("a multi-envelope split stays read-only in the sheet and survives the save", async () => {
+    const onSave = jest.fn();
+    render(
+      <BudgetApp
+        onSave={onSave}
+        initialData={{
+          users: baseUsers, recurring: [], assets: [], transfers: [], reconcileLog: [],
+          unallocatedBalance: 0,
+          categories: [
+            { id: "c-inc", name: "Salary", type: "income", colour: "#7FB069", monthlyBudget: null },
+            env("c-a", "Alpha", { envelopeBalance: 300 }),
+            env("c-b", "Bravo", { envelopeBalance: 200 }),
+          ],
+          transactions: [{
+            id: "t-inc", date: "2026-06-01", amount: 500, type: "income", categoryId: "c-inc",
+            description: "Payslip", isRecurring: false, recurringId: null,
+            allocations: [{ catId: "c-a", amount: 300 }, { catId: "c-b", amount: 200 }],
+            addedBy: "u-user1", createdAt: "2026-06-01T00:00:00Z",
+          }],
+        }}
+      />
+    );
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByTestId("tx-row-t-inc"));
+
+    const form = screen.getByTestId("tx-form");
+    // A split cannot be collapsed into one select, so it is shown as what it is.
+    expect(within(form).getByTestId("tx-allocate-split")).toBeInTheDocument();
+    expect(within(form).queryByTestId("tx-allocate-envelope")).not.toBeInTheDocument();
+    fireEvent.change(within(form).getByTestId("tx-description"), { target: { value: "Payslip — June" } });
+    fireEvent.click(within(form).getByTestId("tx-save"));
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    expect(saved.transactions.find((t) => t.id === "t-inc").allocations)
+      .toEqual([{ catId: "c-a", amount: 300 }, { catId: "c-b", amount: 200 }]);
+    expect(saved.categories.find((c) => c.id === "c-a").envelopeBalance).toBe(300);
+    expect(saved.categories.find((c) => c.id === "c-b").envelopeBalance).toBe(200);
+    expect(saved.unallocatedBalance).toBe(0);
+  });
+});
+
+// The other half of DEC-011: a phone gets the sheet, a desktop does not. The
+// table is compact, the editor lands in view beside the row's Edit button, and
+// the money-movement tests in BudgetApp.test.jsx drive exactly this path.
+describe("The transaction editor on a desktop", () => {
+  test("the row's Edit button still opens the inline form, with no sheet involved", async () => {
+    renderApp({
+      transactions: [{
+        id: "t1", date: "2026-06-02", amount: 25, type: "expense", categoryId: "c-a",
+        description: "Milk", isRecurring: false, recurringId: null, addedBy: "u-user1",
+        createdAt: "2026-06-02T00:00:00Z",
+      }],
+    });
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(within(screen.getByTestId("tx-row-t1")).getByText("Edit"));
+
+    const form = screen.getByTestId("tx-form");
+    expect(within(form).getByTestId("tx-description")).toHaveValue("Milk");
+    expect(screen.queryByTestId("tx-edit-sheet")).not.toBeInTheDocument();
+    // In the page, above the table — which is where a desktop reader is looking.
+    expect(form.closest("[style*='position: fixed']")).toBeNull();
   });
 });

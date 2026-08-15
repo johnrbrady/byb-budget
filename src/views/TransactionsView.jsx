@@ -3,6 +3,7 @@ import { PALETTE } from "../lib/constants.js";
 import { fmtAUD, formatMonth, monthKey } from "../lib/utils.js";
 import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { TxForm } from "../components/forms.jsx";
+import { TxSheet } from "../components/TxSheet.jsx";
 import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
 import { QuickActionsSheet } from "../components/QuickActions.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
@@ -132,20 +133,46 @@ export function TransactionsView({
 
   const openAddForm = () => { setIncomeFlowOpen(false); setEditingTx(null); setTxFormOpen(true); };
   const openEdit = (t) => { setIncomeFlowOpen(false); setEditingTx(t); setTxFormOpen(false); };
+  const closeEditor = () => { setTxFormOpen(false); setEditingTx(null); };
+  const editorOpen = txFormOpen || !!editingTx;
   const clearFilters = () => setTxFilters({ type: "all", categoryId: "all", addedBy: "all", search: "", start: "", end: "" });
 
   const confirmDelete = async (id) => {
     const ok = await askConfirm({ title: "Delete this transaction?", message: "Envelope balances will be adjusted to reverse its effect.", confirmLabel: "Delete", danger: true });
     if (ok) deleteTx(id);
+    return ok;
+  };
+
+  // Delete from inside the editor. The sheet stays open if the user backs out of
+  // the dialog, and closes when the transaction it was editing no longer exists.
+  const deleteFromEditor = async () => {
+    if (!editingTx) return;
+    if (await confirmDelete(editingTx.id)) closeEditor();
+  };
+
+  // One set of props, two presentations: an inline panel on desktop, the body of
+  // a bottom sheet on a phone. The component is the same either way — TxForm is
+  // where the income-allocation rules live and it is not to be duplicated.
+  const txFormProps = {
+    tx: editingTx,
+    categories,
+    activeUserId,
+    onSave: saveTx,
+    onTransfer: (data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); closeEditor(); },
+    onCancel: closeEditor,
+    defaultCategoryId: !editingTx ? contextCatId : null,
+    styles,
   };
 
   // FAB long-press → choose income or expense
   const fabLp = useLongPress(() => setFabMenu(true));
 
-  // Auto-close form when clicking outside it
+  // Auto-close the inline form when clicking outside it. Desktop only: on a
+  // phone the editor is a sheet and its own ground is what dismisses it, so this
+  // listener would be a second, invisible dismisser fighting the first.
   const formRef = useRef(null);
   useEffect(() => {
-    if (!txFormOpen && !editingTx) return;
+    if (mobile || !editorOpen) return;
     const handler = (e) => {
       if (formRef.current && !formRef.current.contains(e.target)) {
         setTxFormOpen(false);
@@ -158,19 +185,7 @@ export function TransactionsView({
       document.removeEventListener("mousedown", handler);
       document.removeEventListener("touchstart", handler);
     };
-  }, [txFormOpen, editingTx]);
-
-  // Swipe-left to exit envelope view (when in individual envelope context)
-  const swipeRef = useRef({ startX: 0, startY: 0 });
-  const handleSwipeTouchStart = (e) => { swipeRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY }; };
-  const handleSwipeTouchEnd = (e) => {
-    if (!inEnvelopeView) return;
-    const dx = swipeRef.current.startX - e.changedTouches[0].clientX;
-    const dy = Math.abs(swipeRef.current.startY - e.changedTouches[0].clientY);
-    if (dx > 60 && dy < 40) {
-      setTxFilters((f) => ({ ...f, categoryId: "all" }));
-    }
-  };
+  }, [mobile, editorOpen]);
 
   const dateRangeFields = (
     <>
@@ -267,13 +282,26 @@ export function TransactionsView({
   );
 
   return (
-    <div onTouchStart={handleSwipeTouchStart} onTouchEnd={handleSwipeTouchEnd}>
-      {/* Envelope context header with back hint */}
+    <div>
+      {/* Envelope context header.
+          This button is the way out of an envelope, so it is a real control and
+          not a hint: full tap height, the accent border the view's other
+          affirmative buttons wear, and first on the row. It replaced a muted
+          ghost button sitting next to the words "Swipe left to go back" — an
+          instruction for a gesture that no longer does this (DEC-010). */}
       {inEnvelopeView && mobile && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 13, color: styles.textMuted }}>
-          <button style={{ ...styles.buttonGhost, padding: "6px 12px", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => setTxFilters((f) => ({ ...f, categoryId: "all" }))}><IconArrowLeft size={14} /> All</button>
-          <span style={styles.pill(categoriesById[txFilters.categoryId]?.colour || "#999")}>{categoriesById[txFilters.categoryId]?.name || "Envelope"}</span>
-          <span style={{ fontSize: 12 }}>Swipe left to go back</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <button
+            style={{ ...styles.button, background: "var(--byb-primary-tint)", color: PALETTE.primaryDeep, border: `1px solid ${PALETTE.primary}`, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0 }}
+            onClick={() => setTxFilters((f) => ({ ...f, categoryId: "all" }))}
+            data-testid="tx-exit-envelope"
+            aria-label="Back to all categories"
+          >
+            <IconArrowLeft size={16} /> All
+          </button>
+          <span style={{ ...styles.pill(categoriesById[txFilters.categoryId]?.colour || "#999"), fontSize: "var(--byb-text-lg)", padding: "6px 12px", minWidth: 0 }}>
+            {categoriesById[txFilters.categoryId]?.name || "Envelope"}
+          </span>
         </div>
       )}
       {mobile ? (
@@ -327,18 +355,12 @@ export function TransactionsView({
         />
       )}
 
-      {(txFormOpen || editingTx) && (
+      {/* Desktop keeps the inline panel: the table is compact, the editor lands
+          in view, and the row's Edit button is right beside it. The phone's copy
+          is a sheet, rendered after the list — see below. */}
+      {!mobile && editorOpen && (
         <div ref={formRef}>
-          <TxForm
-            tx={editingTx}
-            categories={categories}
-            activeUserId={activeUserId}
-            onSave={saveTx}
-            onTransfer={(data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); setTxFormOpen(false); setEditingTx(null); }}
-            onCancel={() => { setTxFormOpen(false); setEditingTx(null); }}
-            defaultCategoryId={!editingTx ? contextCatId : null}
-            styles={styles}
-          />
+          <TxForm {...txFormProps} />
         </div>
       )}
 
@@ -430,6 +452,11 @@ export function TransactionsView({
                 { label: "Transfer between envelopes", sub: "Move money without changing totals", icon: IconPlus, onSelect: openAddForm },
               ]}
             />
+          )}
+          {/* Last in the list's own subtree, so nothing above the rows moves when
+              it opens and the sheet cannot push the list down under the finger. */}
+          {editorOpen && (
+            <TxSheet {...txFormProps} onClose={closeEditor} onDelete={deleteFromEditor} />
           )}
         </>
       ) : (
