@@ -6,6 +6,7 @@ import {
   envelopeFillPlan,
   applyEnvelopeFill,
   removeEnvelope,
+  reconcileLedger,
 } from "./money.js";
 
 // The rule every one of these functions serves: household money is
@@ -309,5 +310,200 @@ describe("removeEnvelope", () => {
     expect(released).toBe(0);
     expect(after.categories).toHaveLength(1);
     expect(total(after)).toBe(total(before));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// reconcileLedger
+//
+// The reconcile used to compute every per-envelope number and then record three
+// aggregates, so "where did the money go" was unanswerable the moment the run
+// finished. `movements` is that answer, and it is only worth having if it agrees
+// with the ledger — a log that does not reconcile is worse than none, because it
+// will be believed. So every case below asserts three things:
+//
+//   1. the household total is unchanged (nothing created, nothing destroyed);
+//   2. the movements sum to exactly the balance changes the ledger made;
+//   3. each envelope individually landed where it should.
+//
+// (2) and (3) are both needed: a bug can conserve the total while paying the
+// wrong envelope, and a movement list can look tidy while describing a ledger
+// that did something else.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("reconcileLedger", () => {
+  const saving = (id, balance) => envelope(id, balance, { isAccumulating: true });
+  const income = (id) => ({ id, name: id, type: "income", colour: "#7FB069", monthlyBudget: null });
+
+  // Every movement replayed against the starting ledger must reproduce the
+  // finishing one, envelope by envelope — the movements ARE the change, not a
+  // commentary on it.
+  const expectMovementsExplainLedger = (before, result) => {
+    const startOf = (id) => before.categories.find((c) => c.id === id)?.envelopeBalance || 0;
+    const endOf = (id) => result.ledger.categories.find((c) => c.id === id)?.envelopeBalance || 0;
+
+    for (const m of result.movements) {
+      expect(m.before).toBeCloseTo(startOf(m.catId), 10);
+      expect(m.after).toBeCloseTo(endOf(m.catId), 10);
+      expect(m.after - m.before).toBeCloseTo(m.amount, 10);
+      expect(m.amount).not.toBe(0);
+    }
+    // No envelope moved without saying so.
+    const moved = new Set(result.movements.map((m) => m.catId));
+    for (const c of before.categories) {
+      if (!moved.has(c.id)) expect(endOf(c.id)).toBeCloseTo(startOf(c.id), 10);
+    }
+    // What the envelopes gave up is exactly what unallocated received.
+    const net = result.movements.reduce((s, m) => s + m.amount, 0);
+    expect(net + result.returned).toBeCloseTo(0, 10);
+    expect(result.ledger.unallocatedBalance - before.unallocatedBalance).toBeCloseTo(result.returned, 10);
+    // And the household is no richer or poorer for any of it.
+    expect(total(result.ledger)).toBeCloseTo(total(before), 10);
+  };
+
+  const movementFor = (result, id) => result.movements.find((m) => m.catId === id);
+
+  test("surplus only: every envelope is emptied into unallocated, and each says so", () => {
+    const before = ledgerOf(10, envelope("a", 80), envelope("b", 45), envelope("c", 0));
+    const result = reconcileLedger(before);
+
+    expect(result.pooled).toBe(125);
+    expect(result.toppedUp).toBe(0);
+    expect(result.returned).toBe(125);
+    expect(result.ledger.unallocatedBalance).toBe(135);
+    expect(balanceOf(result.ledger, "a")).toBe(0);
+    expect(balanceOf(result.ledger, "b")).toBe(0);
+
+    expect(movementFor(result, "a")).toEqual({ catId: "a", before: 80, amount: -80, after: 0 });
+    expect(movementFor(result, "b")).toEqual({ catId: "b", before: 45, amount: -45, after: 0 });
+    // An envelope that did not move is not in the log at all.
+    expect(movementFor(result, "c")).toBeUndefined();
+    expect(result.movements).toHaveLength(2);
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("deficit only: with no surplus to pool, nothing is covered and nothing moves", () => {
+    const before = ledgerOf(500, envelope("a", -30), envelope("b", -55));
+    const result = reconcileLedger(before);
+
+    expect(result.pooled).toBe(0);
+    expect(result.toppedUp).toBe(0);
+    expect(result.returned).toBe(0);
+    // The overdrafts stay where they are: unallocated is not raided to clear
+    // them, which is what the reconcile has always done.
+    expect(balanceOf(result.ledger, "a")).toBe(-30);
+    expect(balanceOf(result.ledger, "b")).toBe(-55);
+    expect(result.movements).toEqual([]);
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("mixed: the pool covers both deficits and the remainder is returned", () => {
+    const before = ledgerOf(0, envelope("a", 80), envelope("b", 45), envelope("c", -30), envelope("d", -55));
+    const result = reconcileLedger(before);
+
+    expect(result.pooled).toBe(125);
+    expect(result.toppedUp).toBe(2);
+    expect(result.returned).toBe(40);
+    expect(result.ledger.unallocatedBalance).toBe(40);
+
+    // Most overdrawn first: d before c.
+    expect(result.movements.filter((m) => m.amount > 0).map((m) => m.catId)).toEqual(["d", "c"]);
+    expect(movementFor(result, "a")).toEqual({ catId: "a", before: 80, amount: -80, after: 0 });
+    expect(movementFor(result, "b")).toEqual({ catId: "b", before: 45, amount: -45, after: 0 });
+    expect(movementFor(result, "c")).toEqual({ catId: "c", before: -30, amount: 30, after: 0 });
+    expect(movementFor(result, "d")).toEqual({ catId: "d", before: -55, amount: 55, after: 0 });
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("a pool that only partly covers the deficits pays the most overdrawn first and stops", () => {
+    // 40 of surplus against 100 of deficit. The pool is spent in order, so the
+    // worst envelope takes all 40 and the other is left where it was — the
+    // shortfall is not spread across both.
+    const before = ledgerOf(0, envelope("a", 40), envelope("b", -60), envelope("c", -40));
+    const result = reconcileLedger(before);
+
+    expect(result.pooled).toBe(40);
+    expect(result.toppedUp).toBe(1);
+    expect(result.returned).toBe(0);
+    expect(result.ledger.unallocatedBalance).toBe(0);
+
+    expect(balanceOf(result.ledger, "a")).toBe(0);
+    expect(balanceOf(result.ledger, "b")).toBe(-20); // -60 + 40
+    expect(balanceOf(result.ledger, "c")).toBe(-40); // untouched, pool was spent
+    expect(movementFor(result, "b")).toEqual({ catId: "b", before: -60, amount: 40, after: -20 });
+    expect(movementFor(result, "c")).toBeUndefined();
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("savings envelopes are left alone on both sides, and never appear in the log", () => {
+    const before = ledgerOf(0, envelope("a", 80), saving("s", 900), saving("s2", -20), income("inc"));
+    const result = reconcileLedger(before);
+
+    expect(result.pooled).toBe(80);
+    expect(result.returned).toBe(80);
+    // The saving envelope's 900 is neither pooled nor used to cover anything,
+    // and its overdrawn sibling is not topped up out of the pool.
+    expect(balanceOf(result.ledger, "s")).toBe(900);
+    expect(balanceOf(result.ledger, "s2")).toBe(-20);
+    expect(movementFor(result, "s")).toBeUndefined();
+    expect(movementFor(result, "s2")).toBeUndefined();
+    expect(result.movements).toHaveLength(1);
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("an income category is not an envelope and is never swept", () => {
+    const before = ledgerOf(0, envelope("a", 50), { ...income("inc"), envelopeBalance: 700 });
+    const result = reconcileLedger(before);
+
+    expect(result.pooled).toBe(50);
+    expect(movementFor(result, "inc")).toBeUndefined();
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("nothing to do: an all-zero ledger comes back untouched with an empty log", () => {
+    const before = ledgerOf(120, envelope("a", 0), envelope("b", 0));
+    const result = reconcileLedger(before);
+
+    expect(result).toMatchObject({ movements: [], pooled: 0, toppedUp: 0, returned: 0 });
+    expect(result.ledger.unallocatedBalance).toBe(120);
+    expect(result.ledger.categories.map((c) => c.envelopeBalance)).toEqual([0, 0]);
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("an exact cover returns nothing and still balances", () => {
+    const before = ledgerOf(0, envelope("a", 60), envelope("b", -60));
+    const result = reconcileLedger(before);
+
+    expect(result.returned).toBe(0);
+    expect(result.toppedUp).toBe(1);
+    expect(balanceOf(result.ledger, "a")).toBe(0);
+    expect(balanceOf(result.ledger, "b")).toBe(0);
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("an envelope with no balance field yet is treated as empty and left out", () => {
+    const before = ledgerOf(0, { id: "a", type: "expense" }, envelope("b", 25));
+    const result = reconcileLedger(before);
+
+    expect(result.pooled).toBe(25);
+    expect(movementFor(result, "a")).toBeUndefined();
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("cents that do not divide evenly still balance to the last cent", () => {
+    const before = ledgerOf(0, envelope("a", 33.33), envelope("b", 12.11), envelope("c", -20.07));
+    const result = reconcileLedger(before);
+
+    expect(result.toppedUp).toBe(1);
+    expect(balanceOf(result.ledger, "c")).toBeCloseTo(0, 10);
+    expect(result.returned).toBeCloseTo(25.37, 10); // 45.44 - 20.07
+    expectMovementsExplainLedger(before, result);
+  });
+
+  test("the input ledger is not mutated", () => {
+    const before = ledgerOf(0, envelope("a", 80), envelope("b", -30));
+    reconcileLedger(before);
+    expect(balanceOf(before, "a")).toBe(80);
+    expect(balanceOf(before, "b")).toBe(-30);
+    expect(before.unallocatedBalance).toBe(0);
   });
 });

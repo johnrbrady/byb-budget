@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE, DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
 import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
-import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope } from "./lib/money.js";
+import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
 import { useIsMobile } from "./hooks/useIsMobile.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -302,7 +302,22 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     showToast(`Filled ${cat.name} with ${fmtAUD(amount)}`);
   };
 
-  const transferEnvelope = (fromId, toId, amount, description) => {
+  // A manual transfer moves money the user has already decided about, so it does
+  // not need permission — but it does need to say when the source envelope does
+  // not hold what is being moved out of it (DEF-014). Same threshold and same
+  // dialog shape as the fill paths above: below a cent is rounding, not an
+  // overdraw.
+  const transferEnvelope = async (fromId, toId, amount, description) => {
+    const from = categories.find((c) => c.id === fromId);
+    const available = from?.envelopeBalance || 0;
+    if (amount - available > 0.01) {
+      const ok = await askConfirm({
+        title: "Transfer more than the envelope holds?",
+        message: `${from?.name || "That envelope"} holds ${fmtAUD(available)} but this transfer moves ${fmtAUD(amount)}. This will leave it at ${fmtAUD(available - amount)}.`,
+        confirmLabel: "Transfer anyway",
+      });
+      if (!ok) return;
+    }
     const newCats = categories.map((c) => {
       if (c.id === fromId) return { ...c, envelopeBalance: (c.envelopeBalance || 0) - amount };
       if (c.id === toId) return { ...c, envelopeBalance: (c.envelopeBalance || 0) + amount };
@@ -378,46 +393,23 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   };
 
   // End-of-month reconcile: pool non-savings surpluses, cover deficits,
-  // remainder to unallocated. Every run is recorded in the reconcile log.
+  // remainder to unallocated. The arithmetic is envelope arithmetic and lives in
+  // lib/money.js; this decides what to record and what to say about it.
   const reconcileEnvelopes = () => {
     const nonSavings = categories.filter((c) => c.type === "expense" && !c.isAccumulating);
     const hasActivity = nonSavings.some((c) => (c.envelopeBalance || 0) !== 0);
     if (!hasActivity) { showToast("Nothing to reconcile"); return; }
 
-    // Step 1: pool all positive non-savings balances
-    let pool = 0;
-    const afterPool = categories.map((c) => {
-      if (c.type === "expense" && !c.isAccumulating && (c.envelopeBalance || 0) > 0) {
-        pool += c.envelopeBalance;
-        return { ...c, envelopeBalance: 0 };
-      }
-      return c;
-    });
-    const totalPooled = pool;
+    const { ledger: next, movements, pooled: totalPooled, toppedUp, returned } = reconcileLedger(ledger());
 
-    // Step 2: cover negatives most-negative first
-    const negIds = afterPool
-      .filter((c) => c.type === "expense" && !c.isAccumulating && (c.envelopeBalance || 0) < 0)
-      .sort((a, b) => (a.envelopeBalance || 0) - (b.envelopeBalance || 0))
-      .map((c) => c.id);
-
-    let toppedUp = 0;
-    let finalCats = [...afterPool];
-    for (const id of negIds) {
-      if (pool <= 0) break;
-      const c = finalCats.find((x) => x.id === id);
-      if (!c) continue;
-      const deficit = -(c.envelopeBalance || 0);
-      const use = Math.min(deficit, pool);
-      pool -= use;
-      if (use > 0) toppedUp++;
-      finalCats = finalCats.map((x) => x.id === id ? { ...x, envelopeBalance: (x.envelopeBalance || 0) + use } : x);
-    }
-
-    const returned = pool;
-    const newUnalloc = unallocatedBalance + returned;
-
-    // Record the reconcile in the log
+    // Record the reconcile in the log.
+    //
+    // The three aggregates keep the shape and the meaning they have always had:
+    // the Reports summary line, the toast, and the n8n integrations endpoint all
+    // read them, and entries written before `movements` existed still have to
+    // render. `toppedUp` therefore stays a COUNT of envelopes rather than an
+    // amount — how much each one received is in `movements`, where it cannot be
+    // mistaken for the count nor drift away from the ledger.
     const entry = {
       id: uid(),
       date: todayISO(),
@@ -426,13 +418,12 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       pooled: Math.round(totalPooled * 100) / 100,
       toppedUp,
       returned: Math.round(returned * 100) / 100,
+      movements,
     };
     const newLog = [entry, ...reconcileLog].slice(0, 120); // keep last 120 runs
 
-    setCategories(finalCats);
-    setUnallocatedBalance(newUnalloc);
     setReconcileLog(newLog);
-    persist({ categories: finalCats, unallocatedBalance: newUnalloc, reconcileLog: newLog });
+    commitLedger(next, { reconcileLog: newLog });
 
     // Notify external automation (n8n webhook) if the server has one configured
     fetch("/api/events/reconcile", {
@@ -749,6 +740,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
                 setIncomeFlowOpen={setIncomeFlowOpen}
                 unallocatedBalance={unallocatedBalance}
                 recurring={recurring}
+                reconcileLog={reconcileLog}
                 styles={styles}
               />
             )}

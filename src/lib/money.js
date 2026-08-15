@@ -134,6 +134,75 @@ export function applyEnvelopeFill({ categories, unallocatedBalance }, catId, amo
 }
 
 /**
+ * End-of-month reconcile: pool every non-savings surplus, cover the deficits
+ * most-overdrawn first, and hand whatever is left back to unallocated.
+ *
+ * Saving ("accumulating") envelopes take no part in either half. Their balance
+ * is the whole point of them, not a surplus waiting to be swept up.
+ *
+ * `movements` is the record of where the money actually went: one entry per
+ * envelope whose balance changed, carrying its balance `before`, the signed
+ * `amount` taken (negative) or given (positive), and its balance `after`.
+ * Envelopes that did not move are left out — a zero row says nothing, and the
+ * log keeps 120 runs against a household that may have thirty-odd envelopes.
+ *
+ * The movements and the ledger are the same arithmetic rather than two accounts
+ * of it, so they cannot disagree: every movement is the change applied to the
+ * ledger it describes, and `Σ movement.amount + returned === 0` — the envelopes
+ * give up exactly what unallocated receives, which is why the household total
+ * is unchanged.
+ *
+ * Movement amounts are left unrounded, exactly as the balances they came from
+ * are. A rounded copy would be a log that no longer agrees with the envelope it
+ * claims to describe. `pooled` and `returned` are sums and the caller rounds
+ * them for the log entry, which is what that entry has always stored.
+ */
+export function reconcileLedger({ categories, unallocatedBalance }) {
+  const isNonSavings = (c) => c.type === "expense" && !c.isAccumulating;
+  const movements = [];
+
+  // Step 1: every positive non-savings balance goes into the pool.
+  let pool = 0;
+  let next = categories.map((c) => {
+    const before = balanceOf(c);
+    if (!isNonSavings(c) || before <= 0) return c;
+    pool += before;
+    movements.push({ catId: c.id, before, amount: -before, after: 0 });
+    return { ...c, envelopeBalance: 0 };
+  });
+  const pooled = pool;
+
+  // Step 2: cover the deficits, most overdrawn first, until the pool runs out.
+  // Deficit envelopes are untouched by step 1, so their balances here are still
+  // the ones the sort was taken on.
+  const inDeficit = next
+    .filter((c) => isNonSavings(c) && balanceOf(c) < 0)
+    .sort((a, b) => balanceOf(a) - balanceOf(b));
+
+  let toppedUp = 0;
+  for (const c of inDeficit) {
+    if (pool <= 0) break;
+    const before = balanceOf(c);
+    const use = Math.min(-before, pool);
+    if (use <= 0) continue;
+    pool -= use;
+    toppedUp++;
+    const after = before + use;
+    movements.push({ catId: c.id, before, amount: use, after });
+    next = next.map((x) => (x.id === c.id ? { ...x, envelopeBalance: after } : x));
+  }
+
+  const returned = pool;
+  return {
+    ledger: { categories: next, unallocatedBalance: unallocatedBalance + returned },
+    movements,
+    pooled,
+    toppedUp,
+    returned,
+  };
+}
+
+/**
  * Drop an envelope and hand whatever it was holding back to unallocated.
  *
  * Unallocated is where the app already keeps money that is not earmarked, and

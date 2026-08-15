@@ -26,6 +26,93 @@ function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   );
 }
 
+// One run in the reconcile history.
+//
+// The summary line is the three aggregates the log has always carried, so a run
+// recorded before per-envelope movements existed reads exactly as it did — and
+// gets no expander, because there is genuinely nothing behind it. A run that
+// does carry movements expands to say which envelopes surrendered surplus,
+// which were topped up and by how much, and what went back to unallocated.
+function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
+  const [open, setOpen] = useState(false);
+  const movements = Array.isArray(entry.movements) ? entry.movements : [];
+  const expandable = movements.length > 0;
+  const surrendered = movements.filter((m) => m.amount < 0);
+  const toppedUp = movements.filter((m) => m.amount > 0);
+  const name = (catId) => categoriesById?.[catId]?.name || "Deleted envelope";
+  const colour = (catId) => categoriesById?.[catId]?.colour || "#999";
+
+  const moveRow = (m) => (
+    <div key={m.catId} data-testid={`reconcile-move-${entry.id}-${m.catId}`}
+      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", flexWrap: "wrap" }}>
+      <span style={styles.pill(colour(m.catId))}>{name(m.catId)}</span>
+      <span style={{ fontSize: 12, color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
+        {fmtAUD(m.before)} → {fmtAUD(m.after)}
+      </span>
+      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 13, minWidth: 88, textAlign: "right", color: m.amount < 0 ? styles.text : PALETTE.primaryDeep }}>
+        {m.amount < 0 ? "−" : "+"}{fmtAUD(Math.abs(m.amount))}
+      </span>
+    </div>
+  );
+
+  const summary = (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>
+          {expandable && <span style={{ color: styles.textMuted, marginRight: 6, fontSize: 11 }}>{open ? "▾" : "▸"}</span>}
+          {entry.date}
+          <span style={{ fontWeight: 400, color: styles.textMuted, marginLeft: 8, fontSize: 12 }}>
+            by {usersById?.[entry.userId]?.name || "Unknown"}
+          </span>
+        </span>
+        <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
+          <span style={{ color: PALETTE.primaryDeep, fontWeight: 700 }}>{fmtAUD(entry.pooled)}</span> redistributed
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>
+        {entry.toppedUp} envelope{entry.toppedUp === 1 ? "" : "s"} topped up · {fmtAUD(entry.returned)} returned to Unallocated
+      </div>
+    </>
+  );
+
+  const pad = styles.isMobile ? "10px 14px" : "12px 20px";
+  if (!expandable) {
+    return <div style={{ padding: pad, borderBottom: `1px solid ${styles.border}` }} data-testid={`reconcile-entry-${entry.id}`}>{summary}</div>;
+  }
+  return (
+    <div style={{ borderBottom: `1px solid ${styles.border}` }} data-testid={`reconcile-entry-${entry.id}`}>
+      <button
+        style={{ display: "block", width: "100%", padding: pad, background: "transparent", border: "none", color: styles.text, font: "inherit", textAlign: "left", cursor: "pointer" }}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        data-testid={`reconcile-toggle-${entry.id}`}
+      >
+        {summary}
+      </button>
+      {open && (
+        <div style={{ padding: styles.isMobile ? "0 14px 12px" : "0 20px 14px" }} data-testid={`reconcile-detail-${entry.id}`}>
+          {surrendered.length > 0 && (
+            <>
+              <div style={{ ...styles.label, marginTop: 6 }}>Surplus pooled from</div>
+              {surrendered.map(moveRow)}
+            </>
+          )}
+          {toppedUp.length > 0 && (
+            <>
+              <div style={{ ...styles.label, marginTop: 10 }}>Topped up</div>
+              {toppedUp.map(moveRow)}
+            </>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 12, paddingTop: 8, borderTop: `1px solid ${styles.border}`, fontSize: 13 }}>
+            <span style={{ color: styles.textMuted }}>Returned to Unallocated</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: PALETTE.primaryDeep }}>{fmtAUD(entry.returned)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ReportsView({ transactions, categories, categoriesById, usersById, reportRange, setReportRange, handleExport, assets, onSaveAsset, onDeleteAsset, transfers, reconcileLog, unallocatedBalance, onSetUnallocated, onImportJSON, onNavigateToCategory, activeMonth, styles }) {
   const [assetForm, setAssetForm] = useState(null); // null=closed, {}=new, {id,...}=editing
   const [importOpen, setImportOpen] = useState(false);
@@ -366,22 +453,7 @@ My transactions and bank statement:
         return (
           <div style={{ ...styles.card, padding: 0 }}>
             {entries.map((e) => (
-              <div key={e.id} style={{ padding: styles.isMobile ? "10px 14px" : "12px 20px", borderBottom: `1px solid ${styles.border}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>
-                    {e.date}
-                    <span style={{ fontWeight: 400, color: styles.textMuted, marginLeft: 8, fontSize: 12 }}>
-                      by {usersById?.[e.userId]?.name || "Unknown"}
-                    </span>
-                  </span>
-                  <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
-                    <span style={{ color: PALETTE.primaryDeep, fontWeight: 700 }}>{fmtAUD(e.pooled)}</span> redistributed
-                  </span>
-                </div>
-                <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>
-                  {e.toppedUp} envelope{e.toppedUp === 1 ? "" : "s"} topped up · {fmtAUD(e.returned)} returned to Unallocated
-                </div>
-              </div>
+              <ReconcileEntry key={e.id} entry={e} categoriesById={categoriesById} usersById={usersById} styles={styles} />
             ))}
           </div>
         );

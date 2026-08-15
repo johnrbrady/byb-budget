@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD, formatMonth } from "../lib/utils.js";
+import { fmtAUD, formatMonth, monthKey } from "../lib/utils.js";
 import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { TxForm } from "../components/forms.jsx";
 import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
 import { QuickActionsSheet } from "../components/QuickActions.jsx";
 import { askConfirm } from "../components/ConfirmDialog.jsx";
 import { useLongPress } from "../hooks/useLongPress.js";
-import { IconArrowLeft, IconWallet, IconList, IconPlus } from "../components/Icons.jsx";
+import { IconArrowLeft, IconWallet, IconList, IconPlus, IconTransfer } from "../components/Icons.jsx";
 
 // How many months of history are rendered at a time. A household with years of
 // data has hundreds of rows behind an envelope, and phones are the primary
@@ -20,7 +20,7 @@ export function TransactionsView({
   transactions, categories, users, categoriesById, usersById, activeMonth, activeUserId,
   txFilters, setTxFilters, editingTx, setEditingTx, txFormOpen, setTxFormOpen,
   saveTx, deleteTx, onTransferEnvelope, onAddIncome,
-  incomeFlowOpen, setIncomeFlowOpen, unallocatedBalance, recurring, styles,
+  incomeFlowOpen, setIncomeFlowOpen, unallocatedBalance, recurring, reconcileLog, styles,
 }) {
   const mobile = styles.isMobile;
   const [showFilters, setShowFilters] = useState(false);
@@ -51,6 +51,50 @@ export function TransactionsView({
   const { income: filteredIncome, expense: filteredExpense } = totals(filteredTx);
   const monthGroups = groupByMonth(filteredTx);
 
+  // ── Reconcile adjustments ──────────────────────────────────────────────────
+  //
+  // A reconcile is not a transaction. Nothing was bought, nobody was paid, and
+  // it belongs to no category — it is the month-end sweep moving an envelope's
+  // balance. So it is never merged into the transaction list and never reaches
+  // totals(): the month subtotals are computed from `filteredTx` alone and
+  // cannot be distorted by an adjustment, by construction rather than by care.
+  // It is rendered as its own kind of row instead, muted and italic, carrying no
+  // Edit or Delete, under the month it happened in.
+  //
+  // Transaction-shaped filters — type, who added it, a description search — have
+  // nothing on an adjustment to match. Rather than pretend one way or the other,
+  // adjustments step aside whenever the user is narrowing the list by them.
+  const showAdjustments = inEnvelopeView && txFilters.type === "all" && txFilters.addedBy === "all" && !txFilters.search;
+  const adjustments = !showAdjustments ? [] : (reconcileLog || []).flatMap((entry) => {
+    const move = (entry.movements || []).find((m) => m.catId === contextCatId);
+    if (!move) return [];
+    // Same date scope as the list itself. Entries recorded before movements
+    // existed have none, so they simply do not appear — there is nothing to say.
+    if (range.start && entry.date < range.start) return [];
+    if (range.end && entry.date > range.end) return [];
+    return [{ id: entry.id, date: entry.date, before: move.before, amount: move.amount, after: move.after }];
+  });
+
+  const adjustmentsByMonth = new Map();
+  for (const a of adjustments) {
+    const m = monthKey(a.date);
+    if (!adjustmentsByMonth.has(m)) adjustmentsByMonth.set(m, []);
+    adjustmentsByMonth.get(m).push(a);
+  }
+
+  // A month can hold an adjustment and no transactions at all — an envelope
+  // swept to zero in a month it was never spent from is exactly the case the
+  // stakeholder is trying to explain. That month still gets a heading, with the
+  // $0.00 subtotals it honestly earned.
+  const displayGroups = [
+    ...monthGroups,
+    ...Array.from(adjustmentsByMonth.keys())
+      .filter((m) => !monthGroups.some((g) => g.month === m))
+      .map((month) => ({ month, transactions: [], income: 0, expense: 0, net: 0 })),
+  ]
+    .sort((a, b) => b.month.localeCompare(a.month))
+    .map((g) => ({ ...g, adjustments: (adjustmentsByMonth.get(g.month) || []).slice().sort((a, b) => b.date.localeCompare(a.date)) }));
+
   // Progressive loading. Only the newest `monthsShown` months are built; the
   // rest are not in the tree at all until asked for. Changing the query starts
   // again from the top, otherwise a narrowed filter would keep an unrelated
@@ -59,8 +103,8 @@ export function TransactionsView({
   const queryKey = [activeMonth, grouped, txFilters.categoryId, txFilters.type, txFilters.addedBy, txFilters.search, range.start, range.end].join("|");
   useEffect(() => { setMonthsShown(MONTHS_PER_PAGE); }, [queryKey]);
 
-  const visibleGroups = grouped ? monthGroups.slice(0, monthsShown) : monthGroups;
-  const hiddenMonths = monthGroups.length - visibleGroups.length;
+  const visibleGroups = grouped ? displayGroups.slice(0, monthsShown) : displayGroups;
+  const hiddenMonths = displayGroups.length - visibleGroups.length;
   const showMore = () => setMonthsShown((n) => n + MONTHS_PER_PAGE);
 
   // Scrolling the "show earlier months" control into view loads the next page,
@@ -182,6 +226,44 @@ export function TransactionsView({
   );
 
   const loadMoreLabel = `Show earlier months (${hiddenMonths} more)`;
+  const noRows = filteredTx.length === 0 && adjustments.length === 0;
+
+  // A reconcile adjustment, told as what it is: the date it ran, which way the
+  // money went, and the balance either side of it. Muted, italic and without the
+  // Edit/Delete a transaction carries, so it cannot be mistaken for one — and
+  // deliberately outside the month subtotal above it, which counts transactions.
+  const adjustmentLabel = (a) => (a.amount < 0 ? "Reconcile · surplus pooled" : "Reconcile · topped up");
+  const adjustmentAmount = (a) => `${a.amount < 0 ? "−" : "+"}${fmtAUD(Math.abs(a.amount))}`;
+  const adjustmentBalances = (a) => `${fmtAUD(a.before)} → ${fmtAUD(a.after)}`;
+
+  const adjustmentCard = (a) => (
+    <div key={`adj-${a.id}`} data-testid={`reconcile-adj-${a.id}`}
+      style={{ ...styles.txCard, gap: 4, fontStyle: "italic", color: styles.textMuted, borderLeft: `3px solid ${PALETTE.accent}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <IconTransfer size={13} /> {adjustmentLabel(a)}
+        </span>
+        <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 14 }}>{adjustmentAmount(a)}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+        <span>{a.date}</span>
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>{adjustmentBalances(a)}</span>
+      </div>
+    </div>
+  );
+
+  const adjustmentRow = (a) => (
+    <tr key={`adj-${a.id}`} data-testid={`reconcile-adj-${a.id}`} style={{ background: styles.surface, fontStyle: "italic", color: styles.textMuted }}>
+      <td style={{ ...styles.td, borderLeft: `4px solid ${PALETTE.accent}` }}>{a.date}</td>
+      <td style={styles.td} colSpan={3}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <IconTransfer size={13} /> {adjustmentLabel(a)} · {adjustmentBalances(a)}
+        </span>
+      </td>
+      <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{adjustmentAmount(a)}</td>
+      <td style={styles.td}></td>
+    </tr>
+  );
 
   return (
     <div onTouchStart={handleSwipeTouchStart} onTouchEnd={handleSwipeTouchEnd}>
@@ -278,6 +360,7 @@ export function TransactionsView({
                     </span>
                   </div>
                 )}
+                {g.adjustments.map(adjustmentCard)}
                 {g.transactions.map((t) => {
                   const cat = categoriesById[t.categoryId];
                   const u = usersById[t.addedBy];
@@ -302,7 +385,7 @@ export function TransactionsView({
                 })}
               </React.Fragment>
             ))}
-            {filteredTx.length === 0 && (
+            {noRows && (
               <div style={{ ...styles.card, textAlign: "center", color: styles.textMuted }}>No transactions match the current filter.</div>
             )}
             {hiddenMonths > 0 && (
@@ -362,6 +445,7 @@ export function TransactionsView({
                       <td style={styles.td}></td>
                     </tr>
                   )}
+                  {g.adjustments.map(adjustmentRow)}
                   {g.transactions.map((t) => {
                     const cat = categoriesById[t.categoryId];
                     const u = usersById[t.addedBy];
@@ -387,7 +471,7 @@ export function TransactionsView({
                   })}
                 </React.Fragment>
               ))}
-              {filteredTx.length === 0 && (
+              {noRows && (
                 <tr><td style={{ ...styles.td, textAlign: "center", color: styles.textMuted, padding: 24 }} colSpan={6}>No transactions match the current filter.</td></tr>
               )}
               {hiddenMonths > 0 && (
