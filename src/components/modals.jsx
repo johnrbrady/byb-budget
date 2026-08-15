@@ -18,7 +18,7 @@ export function WelcomeModal({ onClose, styles }) {
         </div>
 
         {/* Disclaimer */}
-        <div style={{ background: styles.dark ? "#2A2D2A" : "#F7F8F6", border: `1px solid ${styles.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 22, fontSize: 12, color: styles.textMuted, lineHeight: 1.7 }}>
+        <div style={{ background: "var(--byb-surface-sunken)", border: `1px solid ${styles.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 22, fontSize: 12, color: styles.textMuted, lineHeight: 1.7 }}>
           <strong style={{ fontSize: 12, color: styles.text }}>Disclaimer</strong><br />
           BYB! is a personal budgeting tool provided as-is for informational purposes only. It is not financial advice, and nothing in this app should be construed as professional financial, legal, or investment guidance. The creators and contributors of BYB! accept no responsibility or liability for any financial decisions, losses, or outcomes arising from your use of this app. Always consult a qualified financial advisor for personalised advice.
         </div>
@@ -179,7 +179,7 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
           <input style={{ ...styles.input, flex: 1 }} value={nameVal} onChange={(e) => setNameVal(e.target.value)} placeholder="Display name" onKeyDown={(e) => { if (e.key === "Enter") saveName(); }} />
           <button style={{ ...styles.button, whiteSpace: "nowrap" }} onClick={saveName} disabled={nameLoading}>{nameLoading ? "…" : "Save name"}</button>
         </div>
-        {nameMsg && <div style={{ fontSize: 12, color: msgOk(nameMsg) ? PALETTE.primaryDeep : "#DC2626", marginTop: 5 }}>{nameMsg}</div>}
+        {nameMsg && <div style={{ fontSize: 12, color: msgOk(nameMsg) ? "var(--byb-ok)" : "var(--byb-over)", marginTop: 5 }}>{nameMsg}</div>}
 
         {/* Password */}
         <div style={sectionTitle}>Change password</div>
@@ -188,7 +188,7 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
           <input style={styles.input} type="password" placeholder="New password (min 4 chars)" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") savePwd(); }} />
           <button style={styles.button} onClick={savePwd} disabled={pwdLoading}>{pwdLoading ? "Saving…" : "Change password"}</button>
         </div>
-        {pwdMsg && <div style={{ fontSize: 12, color: msgOk(pwdMsg) ? PALETTE.primaryDeep : "#DC2626", marginTop: 5 }}>{pwdMsg}</div>}
+        {pwdMsg && <div style={{ fontSize: 12, color: msgOk(pwdMsg) ? "var(--byb-ok)" : "var(--byb-over)", marginTop: 5 }}>{pwdMsg}</div>}
 
         {/* Appearance */}
         <div style={sectionTitle}>Appearance</div>
@@ -237,7 +237,7 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
               </select>
               <button style={styles.button} onClick={addUser} disabled={addUserLoading || !newUserName.trim()}>{addUserLoading ? "Adding…" : "Add user"}</button>
             </div>
-            {addUserMsg && <div style={{ fontSize: 12, color: msgOk(addUserMsg) ? PALETTE.primaryDeep : "#DC2626", marginTop: 5 }}>{addUserMsg}</div>}
+            {addUserMsg && <div style={{ fontSize: 12, color: msgOk(addUserMsg) ? "var(--byb-ok)" : "var(--byb-over)", marginTop: 5 }}>{addUserMsg}</div>}
           </>
         )}
 

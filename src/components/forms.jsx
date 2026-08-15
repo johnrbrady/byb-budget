@@ -99,7 +99,7 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
                   {splitAllocations.map((a, i) => (
                     <span key={i}>{categories.find((c) => c.id === a.catId)?.name || "?"} — {fmtAUD(a.amount)}</span>
                   ))}
-                  <span style={{ color: splitOverAmount ? PALETTE.danger : styles.textMuted, fontSize: 11 }}>
+                  <span style={{ color: splitOverAmount ? "var(--byb-over)" : styles.textMuted, fontSize: 11 }}>
                     {splitOverAmount
                       ? `Split exceeds the amount — it will be scaled down to ${fmtAUD(parseFloat(form.amount) || 0)}`
                       : "Split kept as is · change it in Add Income"}
@@ -138,7 +138,7 @@ export function AddAmountForm({ categories, onSave, onCancel, styles }) {
   };
   return (
     <form className="byb-panel" onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
-      style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "1fr 1fr 2fr auto auto", gap: 10, borderColor: PALETTE.primary, background: styles.dark ? "#1A2A1A" : "#EDF3E8" }}>
+      style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "1fr 1fr 2fr auto auto", gap: 10, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)" }}>
       <div>
         <div style={styles.label}>Amount ($)</div>
         <input style={styles.input} type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} required />

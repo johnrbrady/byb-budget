@@ -3,6 +3,8 @@ import { PALETTE } from "../lib/constants.js";
 import { fmtAUD, todayISO } from "../lib/utils.js";
 import { RuleForm } from "../components/forms.jsx";
 import { askConfirm } from "../components/ConfirmDialog.jsx";
+import { EmptyState } from "../components/EmptyState.jsx";
+import { IconRepeat } from "../components/Icons.jsx";
 
 export function RecurringView({ recurring, categories, users, categoriesById, activeUserId, editingRule, setEditingRule, ruleFormOpen, setRuleFormOpen, saveRule, deleteRule, postDueRecurrences, styles }) {
   const due = recurring.filter((r) => r.nextDueDate <= todayISO());
@@ -43,7 +45,7 @@ export function RecurringView({ recurring, categories, users, categoriesById, ac
               <div key={r.id} style={{ ...styles.txCard, borderLeft: overdue ? `3px solid ${PALETTE.warn}` : styles.txCard.borderLeft }} onClick={() => { setEditingRule(r); setRuleFormOpen(false); }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 600, fontSize: 15 }}>{r.label}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 16, color: r.type === "income" ? PALETTE.primaryDeep : styles.text }}>
+                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 16, color: r.type === "income" ? "var(--byb-ok)" : styles.text }}>
                     {r.type === "income" ? "+" : "−"}{fmtAUD(r.amount)}
                   </span>
                 </div>
@@ -59,7 +61,9 @@ export function RecurringView({ recurring, categories, users, categoriesById, ac
             );
           })}
           {recurring.length === 0 && (
-            <div style={{ ...styles.card, textAlign: "center", color: styles.textMuted }}>No recurring rules yet.</div>
+            <div style={{ ...styles.card, padding: 0 }}>
+              <EmptyState icon={IconRepeat} title="No recurring rules yet." hint="Add your regular bills and income here and BYB! posts them on their due date, so nothing sneaks up on you." styles={styles} />
+            </div>
           )}
           {!ruleFormOpen && !editingRule && (
             <button style={styles.fab} onClick={() => { setEditingRule(null); setRuleFormOpen(true); }} aria-label="Add recurring rule">+</button>
@@ -93,7 +97,9 @@ export function RecurringView({ recurring, categories, users, categoriesById, ac
                 );
               })}
               {recurring.length === 0 && (
-                <tr><td style={{ ...styles.td, textAlign: "center", color: styles.textMuted, padding: 24 }} colSpan={7}>No recurring rules yet.</td></tr>
+                <tr><td style={{ ...styles.td, padding: 0 }} colSpan={7}>
+                  <EmptyState icon={IconRepeat} title="No recurring rules yet." hint="Add your regular bills and income here and BYB! posts them on their due date, so nothing sneaks up on you." styles={styles} />
+                </td></tr>
               )}
             </tbody>
           </table>

@@ -5,18 +5,23 @@ import { CatForm } from "../components/forms.jsx";
 import { FirstTimeFillWizard } from "../components/FirstTimeFillWizard.jsx";
 import { AnimatedCurrency } from "../components/AnimatedNumber.jsx";
 import { QuickActionsSheet } from "../components/QuickActions.jsx";
+import { EmptyState } from "../components/EmptyState.jsx";
 import { useLongPress } from "../hooks/useLongPress.js";
-import { IconDrag, IconZap, IconList, IconEdit, IconClose, IconPlus } from "../components/Icons.jsx";
+import { envelopeStatus, statusColour, statusSoft, fillFraction, STATUS_LABEL } from "../styles/envelopeStatus.js";
+import { IconDrag, IconZap, IconList, IconEdit, IconClose, IconPlus, IconEnvelope } from "../components/Icons.jsx";
 
 function EnvelopeCard({ c, styles, editingCat, dragId, dragOverId, dragHandlers, handleTouchHandlers, onEdit, onFill, onLongPress, canFill }) {
   const balance = c.envelopeBalance || 0;
   const base = c.baseAmount || 0;
-  const balColour = balance < 0 ? PALETTE.danger : balance < base * 0.2 ? PALETTE.warn : PALETTE.primaryDeep;
+  const status = envelopeStatus(balance, base);
+  const balColour = statusColour(status);
+  const filled = fillFraction(balance, base);
   const lp = useLongPress(() => onLongPress(c));
   return (
     <div
       data-env-id={c.id}
-      className="byb-hover-card"
+      data-env-status={status}
+      className="byb-hover-card byb-card-press"
       draggable={!editingCat}
       onDragStart={(e) => dragHandlers.start(e, c.id)}
       onDragOver={(e) => dragHandlers.over(e, c.id)}
@@ -26,10 +31,14 @@ function EnvelopeCard({ c, styles, editingCat, dragId, dragOverId, dragHandlers,
       onTouchMove={lp.onTouchMove}
       onTouchEnd={lp.onTouchEnd}
       onTouchCancel={lp.onTouchCancel}
-      style={{ ...styles.card, display: "flex", flexDirection: "column", opacity: dragId === c.id ? 0.45 : 1, outline: dragOverId === c.id ? `2px solid ${PALETTE.primary}` : "none", transition: "opacity .15s, border-color .15s, box-shadow .15s", cursor: dragId ? "grabbing" : "grab" }}
+      style={{ ...styles.card, display: "flex", flexDirection: "column", opacity: dragId === c.id ? 0.45 : 1, outline: dragOverId === c.id ? `2px solid ${PALETTE.primary}` : "none", transition: "opacity .15s, border-color .15s, box-shadow .15s, transform .1s", cursor: dragId ? "grabbing" : "grab" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        {/* data-swipe-ignore: this handle owns horizontal drags — it is where
+            reordering starts, so the shell's tab swipe leaves it alone. The card
+            body around it does not, which is why swipe was dead on this tab. */}
         <span
+          data-swipe-ignore
           style={{ color: styles.textMuted, flexShrink: 0, cursor: "grab", userSelect: "none", touchAction: "none", display: "inline-flex", padding: 2 }}
           onTouchStart={(e) => handleTouchHandlers.start(e, c.id)}
           onTouchEnd={handleTouchHandlers.end}
@@ -42,11 +51,33 @@ function EnvelopeCard({ c, styles, editingCat, dragId, dragOverId, dragHandlers,
         {c.isAccumulating && <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 99, background: PALETTE.secondary + "55", color: PALETTE.primaryDeep, fontWeight: 700 }}>Saving</span>}
         {c.protected && <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 99, background: "#9CA3AF22", color: "#6B7280", fontWeight: 700 }}>Protected</span>}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: balColour, letterSpacing: -0.5, marginBottom: 4 }}>
-        <AnimatedCurrency value={balance} />
+      {/* The card is an envelope, so it says how full it is. The number alone
+          told you what was in it but not whether that was a lot or nearly
+          nothing — which is the question actually being asked at a glance. */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+        <span style={{ fontSize: "var(--byb-text-xl)", fontWeight: 800, color: balColour, letterSpacing: -0.5 }}>
+          <AnimatedCurrency value={balance} />
+        </span>
+        <span style={{ fontSize: "var(--byb-text-sm)", color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
+          / {fmtAUD(base)}
+        </span>
       </div>
-      <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 10 }}>
-        Fill {fmtAUD(base)}/mo{c.isAccumulating ? " · accumulating" : ""}
+      <div
+        className="byb-meter"
+        role="img"
+        aria-label={`${STATUS_LABEL[status]} — ${fmtAUD(balance)} of ${fmtAUD(base)}`}
+        data-testid={`env-meter-${c.id}`}
+      >
+        <div className="byb-meter-fill" data-testid={`env-meter-fill-${c.id}`} style={{ width: `${filled * 100}%`, background: balColour }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "var(--byb-text-xs)", color: styles.textMuted, margin: "6px 0 10px" }}>
+        <span
+          data-testid={`env-status-${c.id}`}
+          style={{ color: balColour, fontWeight: 700, background: statusSoft(status), padding: "2px 8px", borderRadius: "var(--byb-radius-pill)" }}
+        >
+          {STATUS_LABEL[status]}
+        </span>
+        <span>{base > 0 ? `${Math.round(filled * 100)}% of ${fmtAUD(base)}/mo` : "No monthly amount set"}{c.isAccumulating ? " · accumulating" : ""}</span>
       </div>
       <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
         <button style={{ ...styles.buttonGhost, fontSize: 12, padding: "6px 12px", flex: 1 }} onClick={(e) => { e.stopPropagation(); onEdit(c); }}>Edit</button>
@@ -173,7 +204,7 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
       {/* Unallocated summary */}
       <div style={{ ...styles.card, marginBottom: 20 }}>
         <div style={styles.kpiLabel}>Unallocated balance</div>
-        <div style={{ fontSize: mobile ? 28 : 34, fontWeight: 800, letterSpacing: -1, color: unallocatedBalance < 0 ? PALETTE.danger : PALETTE.primaryDeep, lineHeight: 1.1 }}>
+        <div style={{ fontSize: mobile ? 28 : 34, fontWeight: 800, letterSpacing: -1, color: unallocatedBalance < 0 ? "var(--byb-over)" : "var(--byb-ok)", lineHeight: 1.1 }}>
           <AnimatedCurrency value={unallocatedBalance} />
         </div>
         <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 4 }}>{fmtAUD(totalBalance)} in envelopes · {fmtAUD(totalBase)}/mo base</div>
@@ -197,7 +228,7 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
           {(fillPanelOpen || showWizard) ? <><IconClose size={16} /> Close</> : <><IconZap size={16} /> Fill Envelopes</>}
         </button>
         <button
-          style={{ ...styles.buttonGhost, padding: mobile ? "18px 12px" : "20px 16px", fontSize: mobile ? 14 : 16, fontWeight: 700, borderRadius: 10, borderWidth: 2, background: addEnvOpen ? (styles.dark ? "#2A2D2A" : "#EDF1E8") : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+          style={{ ...styles.buttonGhost, padding: mobile ? "18px 12px" : "20px 16px", fontSize: mobile ? 14 : 16, fontWeight: 700, borderRadius: 10, borderWidth: 2, background: addEnvOpen ? "var(--byb-primary-tint)" : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
           onClick={() => { setAddEnvOpen((o) => !o); setFillPanelOpen(false); setEditingCat(null); if (!addEnvOpen) setCatFormOpen(true); else setCatFormOpen(false); }}
         >
           {addEnvOpen ? <><IconClose size={16} /> Cancel</> : <><IconPlus size={16} /> Add Envelope</>}
@@ -219,7 +250,7 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
 
       {/* Fill Envelopes panel */}
       {fillPanelOpen && !showWizard && (
-        <div className="byb-panel" style={{ ...styles.card, marginBottom: 20, borderColor: PALETTE.primary, background: styles.dark ? "#1A2A1A" : "#EDF3E8" }}>
+        <div className="byb-panel" style={{ ...styles.card, marginBottom: 20, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)" }}>
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Fill all envelopes from income</div>
           <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 16 }}>
             Enter amounts from each income source. The combined total fills all envelopes at once.
@@ -319,8 +350,14 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
           );
         })}
         {expenseCats.length === 0 && (
-          <div style={{ ...styles.card, gridColumn: "span 2", color: styles.textMuted, textAlign: "center" }}>
-            No expense envelopes yet. Hit "+ Add Envelope" to create one.
+          <div style={{ ...styles.card, gridColumn: "1 / -1", padding: 0 }}>
+            <EmptyState
+              icon={IconEnvelope}
+              title="No envelopes yet"
+              hint="Envelopes are where each month's money is set aside — rent, groceries, fuel. Create the first one and give it a monthly amount."
+              action={{ label: "Add an envelope", onSelect: () => { setAddEnvOpen(true); setFillPanelOpen(false); setEditingCat(null); setCatFormOpen(true); } }}
+              styles={styles}
+            />
           </div>
         )}
       </div>

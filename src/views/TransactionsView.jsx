@@ -5,6 +5,7 @@ import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib
 import { TxForm } from "../components/forms.jsx";
 import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
 import { QuickActionsSheet } from "../components/QuickActions.jsx";
+import { EmptyState } from "../components/EmptyState.jsx";
 import { askConfirm } from "../components/ConfirmDialog.jsx";
 import { useLongPress } from "../hooks/useLongPress.js";
 import { IconArrowLeft, IconWallet, IconList, IconPlus, IconTransfer } from "../components/Icons.jsx";
@@ -218,7 +219,7 @@ export function TransactionsView({
         {filteredTx.length} transaction{filteredTx.length === 1 ? "" : "s"}
       </span>
       <span>
-        <span style={{ color: PALETTE.primaryDeep, fontWeight: 600 }} data-testid="filter-income">+{fmtAUD(filteredIncome)}</span>
+        <span style={{ color: "var(--byb-ok)", fontWeight: 600 }} data-testid="filter-income">+{fmtAUD(filteredIncome)}</span>
         {" · "}
         <span style={{ fontWeight: 600 }} data-testid="filter-expense">−{fmtAUD(filteredExpense)}</span>
       </span>
@@ -279,7 +280,7 @@ export function TransactionsView({
         <>
           <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
             <button style={{ ...styles.button, flex: 1, fontSize: 16, fontWeight: 700 }} onClick={openAddForm} data-testid="add-tx-mobile">+ Add</button>
-            <button style={{ ...styles.button, flex: 1, fontSize: 14, fontWeight: 600, background: styles.dark ? "#2A3A2A" : "#EDF3E8", color: PALETTE.primaryDeep, border: `1px solid ${PALETTE.primary}` }}
+            <button style={{ ...styles.button, flex: 1, fontSize: 14, fontWeight: 600, background: "var(--byb-primary-tint)", color: PALETTE.primaryDeep, border: `1px solid ${PALETTE.primary}` }}
               onClick={() => { setTxFormOpen(false); setEditingTx(null); setIncomeFlowOpen((o) => !o); }}>
               {incomeFlowOpen ? "✕ Cancel" : "+ Income"}
             </button>
@@ -346,16 +347,20 @@ export function TransactionsView({
       {mobile ? (
         <>
           <div data-testid="tx-table">
+            {/* Each month is its own group element so its heading is pushed out
+                by the next one instead of every heading piling up at the same
+                sticky offset. */}
             {visibleGroups.map((g) => (
-              <React.Fragment key={g.month}>
+              <div className="byb-month-group" key={g.month}>
                 {grouped && (
                   <div
+                    className="byb-month-heading"
                     data-testid={`tx-month-heading-${g.month}`}
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, padding: "10px 12px", marginBottom: 8, borderRadius: 10, background: styles.surfaceAlt, border: `1px solid ${styles.border}`, borderLeft: `4px solid ${PALETTE.primary}` }}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, padding: "10px 12px", marginBottom: 8, borderRadius: "var(--byb-radius)", background: styles.surfaceAlt, border: `1px solid ${styles.border}`, borderLeft: `4px solid ${PALETTE.primary}`, boxShadow: "var(--byb-elev-1)" }}
                   >
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>{formatMonth(g.month)}</span>
-                    <span style={{ fontSize: 13, fontVariantNumeric: "tabular-nums", color: styles.textMuted }}>
-                      {g.income > 0 && <span style={{ color: PALETTE.primaryDeep, fontWeight: 600 }}>+{fmtAUD(g.income)} · </span>}
+                    <span style={{ fontWeight: 700, fontSize: "var(--byb-text-lg)" }}>{formatMonth(g.month)}</span>
+                    <span style={{ fontSize: "var(--byb-text-md)", fontVariantNumeric: "tabular-nums", color: styles.textMuted }}>
+                      {g.income > 0 && <span style={{ color: "var(--byb-ok)", fontWeight: 600 }}>+{fmtAUD(g.income)} · </span>}
                       <span style={{ fontWeight: 700, color: styles.text }} data-testid={`tx-month-total-${g.month}`}>−{fmtAUD(g.expense)}</span>
                     </span>
                   </div>
@@ -365,10 +370,10 @@ export function TransactionsView({
                   const cat = categoriesById[t.categoryId];
                   const u = usersById[t.addedBy];
                   return (
-                    <div key={t.id} style={{ ...styles.txCard, background: t.imported ? (styles.dark ? "#122012" : "#ECF4E8") : styles.txCard.background, borderLeft: t.imported ? `3px solid ${PALETTE.primary}` : undefined }} data-testid={`tx-row-${t.id}`} onClick={() => openEdit(t)}>
+                    <div key={t.id} style={{ ...styles.txCard, background: t.imported ? "var(--byb-primary-tint)" : styles.txCard.background, borderLeft: t.imported ? `3px solid ${PALETTE.primary}` : undefined }} data-testid={`tx-row-${t.id}`} onClick={() => openEdit(t)}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                         <span style={styles.pill(cat?.colour || "#999")}>{cat?.name || "?"}</span>
-                        <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 16, color: t.type === "income" ? PALETTE.primaryDeep : styles.text }}>
+                        <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 16, color: t.type === "income" ? "var(--byb-ok)" : styles.text }}>
                           {t.type === "income" ? "+" : "−"}{fmtAUD(t.amount)}
                         </span>
                       </div>
@@ -383,10 +388,18 @@ export function TransactionsView({
                     </div>
                   );
                 })}
-              </React.Fragment>
+              </div>
             ))}
             {noRows && (
-              <div style={{ ...styles.card, textAlign: "center", color: styles.textMuted }}>No transactions match the current filter.</div>
+              <div style={{ ...styles.card, padding: 0 }}>
+                <EmptyState
+                  icon={IconList}
+                  title="No transactions match the current filter."
+                  hint="Try clearing the filters, widening the date range, or adding the first transaction."
+                  action={{ label: "Clear filters", onSelect: clearFilters }}
+                  styles={styles}
+                />
+              </div>
             )}
             {hiddenMonths > 0 && (
               <button ref={loadMoreRef} style={{ ...styles.buttonGhost, width: "100%", marginTop: 4 }} onClick={showMore} data-testid="tx-load-more">
@@ -432,17 +445,19 @@ export function TransactionsView({
                 <th style={styles.th}></th>
               </tr>
             </thead>
-            <tbody>
-              {visibleGroups.map((g) => (
-                <React.Fragment key={g.month}>
+            {/* One tbody per month, for the same reason the card list wraps each
+                group in its own element: a sticky heading has to be pushed out
+                by the next group rather than pile up on the one before it. */}
+            {visibleGroups.map((g) => (
+                <tbody key={g.month}>
                   {grouped && (
-                    <tr data-testid={`tx-month-heading-${g.month}`} style={{ background: styles.surface }}>
-                      <td style={{ ...styles.td, fontWeight: 700, borderLeft: `4px solid ${PALETTE.primary}` }} colSpan={4}>{formatMonth(g.month)}</td>
-                      <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
-                        {g.income > 0 && <span style={{ color: PALETTE.primaryDeep, display: "block", fontWeight: 600 }}>+{fmtAUD(g.income)}</span>}
+                    <tr data-testid={`tx-month-heading-${g.month}`}>
+                      <td className="byb-month-heading-cell" style={{ ...styles.td, borderBottom: "none", fontWeight: 700, borderLeft: `4px solid ${PALETTE.primary}` }} colSpan={4}>{formatMonth(g.month)}</td>
+                      <td className="byb-month-heading-cell" style={{ ...styles.td, borderBottom: "none", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
+                        {g.income > 0 && <span style={{ color: "var(--byb-ok)", display: "block", fontWeight: 600 }}>+{fmtAUD(g.income)}</span>}
                         <span data-testid={`tx-month-total-${g.month}`}>−{fmtAUD(g.expense)}</span>
                       </td>
-                      <td style={styles.td}></td>
+                      <td className="byb-month-heading-cell" style={{ ...styles.td, borderBottom: "none" }}></td>
                     </tr>
                   )}
                   {g.adjustments.map(adjustmentRow)}
@@ -450,7 +465,7 @@ export function TransactionsView({
                     const cat = categoriesById[t.categoryId];
                     const u = usersById[t.addedBy];
                     return (
-                      <tr key={t.id} className="byb-hover-row" data-testid={`tx-row-${t.id}`} style={{ background: t.imported ? (styles.dark ? "#122012" : "#ECF4E8") : "transparent" }}>
+                      <tr key={t.id} className="byb-hover-row" data-testid={`tx-row-${t.id}`} style={{ background: t.imported ? "var(--byb-primary-tint)" : "transparent" }}>
                         <td style={styles.td}>{t.date}</td>
                         <td style={styles.td}><span style={styles.pill(cat?.colour || "#999")}>{cat?.name || "?"}</span></td>
                         <td style={styles.td}>
@@ -459,7 +474,7 @@ export function TransactionsView({
                           {t.imported && <span style={{ marginLeft: 6, fontSize: 11, color: PALETTE.primaryDeep, fontWeight: 600 }}>· imported</span>}
                         </td>
                         <td style={styles.td}><span style={{ ...styles.avatarCircle(u || { colour: "#999", name: "?" }), width: 22, height: 22, fontSize: 10 }}>{u?.name[0] || "?"}</span></td>
-                        <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: t.type === "income" ? PALETTE.primaryDeep : styles.text }}>
+                        <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: t.type === "income" ? "var(--byb-ok)" : styles.text }}>
                           {t.type === "income" ? "+" : "−"}{fmtAUD(t.amount)}
                         </td>
                         <td style={{ ...styles.td, textAlign: "right" }}>
@@ -469,10 +484,19 @@ export function TransactionsView({
                       </tr>
                     );
                   })}
-                </React.Fragment>
+                </tbody>
               ))}
+            <tbody>
               {noRows && (
-                <tr><td style={{ ...styles.td, textAlign: "center", color: styles.textMuted, padding: 24 }} colSpan={6}>No transactions match the current filter.</td></tr>
+                <tr><td style={{ ...styles.td, padding: 0 }} colSpan={6}>
+                  <EmptyState
+                    icon={IconList}
+                    title="No transactions match the current filter."
+                    hint="Try clearing the filters, widening the date range, or adding the first transaction."
+                    action={{ label: "Clear filters", onSelect: clearFilters }}
+                    styles={styles}
+                  />
+                </td></tr>
               )}
               {hiddenMonths > 0 && (
                 <tr>
@@ -486,7 +510,7 @@ export function TransactionsView({
               <tr>
                 <td style={{ ...styles.td, fontWeight: 600 }} colSpan={4}>{hasRange ? "Range total" : "Totals"}</td>
                 <td style={{ ...styles.td, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                  <span style={{ color: PALETTE.primaryDeep }}>+{fmtAUD(filteredIncome)}</span>
+                  <span style={{ color: "var(--byb-ok)" }}>+{fmtAUD(filteredIncome)}</span>
                   <br />
                   <span>−{fmtAUD(filteredExpense)}</span>
                 </td>

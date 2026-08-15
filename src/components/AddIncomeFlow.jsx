@@ -71,20 +71,20 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
   const chip = (active) => ({
     padding: "9px 14px", borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: "pointer",
     border: `2px solid ${active ? PALETTE.primary : styles.border}`,
-    background: active ? (styles.dark ? "#1A2A1A" : "#EDF3E8") : "transparent",
+    background: active ? "var(--byb-primary-tint)" : "transparent",
     color: active ? PALETTE.primaryDeep : styles.text,
     display: "inline-flex", alignItems: "center", gap: 6,
   });
   const allocOption = (active) => ({
     flex: 1, minWidth: mobile ? "100%" : 150, padding: "12px 14px", borderRadius: 10, cursor: "pointer", textAlign: "left",
     border: `2px solid ${active ? PALETTE.primary : styles.border}`,
-    background: active ? (styles.dark ? "#1A2A1A" : "#EDF3E8") : "transparent",
+    background: active ? "var(--byb-primary-tint)" : "transparent",
     color: styles.text, display: "flex", flexDirection: "column", gap: 3,
   });
 
   return (
     <form className="byb-panel" onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
-      style={{ ...styles.card, marginBottom: 16, borderColor: PALETTE.primary, background: styles.dark ? "#1A2A1A" : "#EDF3E8" }}
+      style={{ ...styles.card, marginBottom: 16, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)" }}
       data-testid="add-income-flow">
       <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
         <IconWallet size={18} /> Add income
@@ -176,7 +176,7 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
               onClick={() => setSplits((prev) => [...prev, { catId: expenseCats[0]?.id || "", amount: "" }])}>
               <IconPlus size={13} /> Add another envelope
             </button>
-            <span style={{ fontSize: 12, fontWeight: 600, color: splitRemaining < -0.005 ? PALETTE.danger : styles.textMuted }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: splitRemaining < -0.005 ? "var(--byb-over)" : styles.textMuted }}>
               {splitRemaining < -0.005
                 ? `Over by ${fmtAUD(-splitRemaining)}`
                 : `${fmtAUD(splitRemaining)} of ${fmtAUD(parsedAmount)} stays unallocated`}

@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
-import { PALETTE, DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
+import React, { useState, useEffect } from "react";
+import { DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
 import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
 import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
 import { useIsMobile } from "./hooks/useIsMobile.js";
+import { useSwipeNavigation } from "./hooks/useSwipeNavigation.js";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { Header } from "./components/Header.jsx";
 import { ConfirmHost, askConfirm } from "./components/ConfirmDialog.jsx";
@@ -88,9 +89,29 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const [toast, setToast] = useState(null);
   const isMobile = useIsMobile();
 
-  // Theme variables for the global stylesheet
+  // Theme variables for the global stylesheet.
+  //
+  // Transitions are suppressed for the frame the swap lands on. A var()-valued
+  // property that is mid-transition is not re-resolved when the custom property
+  // underneath it changes, which stranded card elevation on the outgoing
+  // theme's shadow (see .byb-theme-switching in global.css).
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const el = document.documentElement;
+    el.classList.add("byb-theme-switching");
+    el.dataset.theme = theme;
+    // Whether a transition starts is decided at style recalculation, so the
+    // recalculation has to happen while the guard is up. Reading offsetWidth
+    // forces it synchronously — without it the guard going up, the theme
+    // changing and the guard coming down all coalesce into one recalculation
+    // where the guard is already gone, and the stranding comes straight back.
+    void el.offsetWidth;
+    // A timer rather than requestAnimationFrame: rAF is paused in a hidden tab,
+    // and a guard that never lifted would leave the app with no motion at all.
+    const t = setTimeout(() => el.classList.remove("byb-theme-switching"), 0);
+    return () => {
+      clearTimeout(t);
+      el.classList.remove("byb-theme-switching");
+    };
   }, [theme]);
 
   // If this device dismissed the welcome before the upgrade, sync the flag to
@@ -138,27 +159,22 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   };
 
   // ── Swipe between tabs (touch devices) ────────────────────────────────────
-  const swipeRef = useRef({ x: 0, y: 0, active: false });
+  //
+  // The gesture itself lives in useSwipeNavigation, which tracks the finger and
+  // settles the view. All this decides is when the shell owns the gesture:
+  // never over a modal, and never inside a single envelope's history, which has
+  // its own swipe-back.
   const inEnvelopeContext = view === "transactions" && txFilters.categoryId !== "all";
   const anyModalOpen = settingsOpen || welcomeOpen || showNamePrompt;
 
-  const onSwipeStart = (e) => {
-    const t = e.touches[0];
-    swipeRef.current = { x: t.clientX, y: t.clientY, active: true };
-  };
-  const onSwipeEnd = (e) => {
-    if (!swipeRef.current.active) return;
-    swipeRef.current.active = false;
-    if (anyModalOpen || inEnvelopeContext) return; // envelope view has its own swipe-back
-    if (e.target.closest && e.target.closest("input, select, textarea, [data-env-id]")) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - swipeRef.current.x;
-    const dy = t.clientY - swipeRef.current.y;
-    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    const idx = VIEW_ORDER.indexOf(view);
-    if (dx < 0 && idx < VIEW_ORDER.length - 1) handleSetView(VIEW_ORDER[idx + 1], "right");
-    else if (dx > 0 && idx > 0) handleSetView(VIEW_ORDER[idx - 1], "left");
-  };
+  const swipe = useSwipeNavigation({
+    enabled: !anyModalOpen && !inEnvelopeContext,
+    index: VIEW_ORDER.indexOf(view),
+    count: VIEW_ORDER.length,
+    // The gesture has already moved the view; the mount animation would replay
+    // the same travel a second time.
+    onNavigate: (i) => handleSetView(VIEW_ORDER[i], "none"),
+  });
 
   const categoriesById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const usersById = Object.fromEntries(users.map((u) => [u.id, u]));
@@ -689,123 +705,121 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           onLogout={handleLogout}
           styles={styles}
         />
-        <div
-          style={styles.content}
-          onTouchStart={onSwipeStart}
-          onTouchEnd={onSwipeEnd}
-        >
-          <div key={view} className={viewAnim ? `byb-view-${viewAnim}` : "byb-view"}>
-            {view === "dashboard" && (
-              <Dashboard
-                activeMonth={activeMonth}
-                transactions={transactions}
-                categories={categories}
-                recurring={recurring}
-                styles={styles}
-                unallocatedBalance={unallocatedBalance}
-                onTransferEnvelope={transferEnvelope}
-                onAddTx={saveTx}
-                onAddIncome={addIncome}
-                activeUserId={activeUserId}
-                txFormOpen={txFormOpen}
-                setTxFormOpen={setTxFormOpen}
-                setEditingTx={setEditingTx}
-                onReconcile={reconcileEnvelopes}
-                onNavigateToCategory={navigateToCategory}
-                onFillSingleEnvelope={fillEnvelope}
-                incomeFlowOpen={incomeFlowOpen}
-                setIncomeFlowOpen={setIncomeFlowOpen}
-              />
-            )}
-            {view === "transactions" && (
-              <TransactionsView
-                transactions={transactions}
-                categories={categories}
-                users={users}
-                categoriesById={categoriesById}
-                usersById={usersById}
-                activeMonth={activeMonth}
-                activeUserId={activeUserId}
-                txFilters={txFilters}
-                setTxFilters={setTxFilters}
-                editingTx={editingTx}
-                setEditingTx={setEditingTx}
-                txFormOpen={txFormOpen}
-                setTxFormOpen={setTxFormOpen}
-                saveTx={saveTx}
-                deleteTx={deleteTx}
-                onTransferEnvelope={transferEnvelope}
-                onAddIncome={addIncome}
-                incomeFlowOpen={incomeFlowOpen}
-                setIncomeFlowOpen={setIncomeFlowOpen}
-                unallocatedBalance={unallocatedBalance}
-                recurring={recurring}
-                reconcileLog={reconcileLog}
-                styles={styles}
-              />
-            )}
-            {view === "categories" && (
-              <EnvelopesView
-                categories={categories}
-                editingCat={editingCat}
-                setEditingCat={setEditingCat}
-                catFormOpen={catFormOpen}
-                setCatFormOpen={setCatFormOpen}
-                saveCat={saveCat}
-                deleteCat={deleteCat}
-                unallocatedBalance={unallocatedBalance}
-                onFillWithIncome={fillAllWithMultipleIncome}
-                onFillSingleEnvelope={fillEnvelope}
-                onSetupBaseAmounts={setupBaseAmounts}
-                recurring={recurring}
-                onReorderCats={reorderCategories}
-                onNavigateToCategory={navigateToCategory}
-                styles={styles}
-              />
-            )}
-            {view === "recurring" && (
-              <RecurringView
-                recurring={recurring}
-                categories={categories}
-                users={users}
-                categoriesById={categoriesById}
-                activeUserId={activeUserId}
-                editingRule={editingRule}
-                setEditingRule={setEditingRule}
-                ruleFormOpen={ruleFormOpen}
-                setRuleFormOpen={setRuleFormOpen}
-                saveRule={saveRule}
-                deleteRule={deleteRule}
-                postDueRecurrences={postDueRecurrences}
-                styles={styles}
-              />
-            )}
-            {view === "reports" && (
-              <ReportsView
-                transactions={transactions}
-                categories={categories}
-                categoriesById={categoriesById}
-                usersById={usersById}
-                reportRange={reportRange}
-                setReportRange={setReportRange}
-                handleExport={handleExport}
-                assets={assets}
-                onSaveAsset={saveAsset}
-                onDeleteAsset={deleteAsset}
-                transfers={transfers}
-                reconcileLog={reconcileLog}
-                unallocatedBalance={unallocatedBalance}
-                onSetUnallocated={setUnallocatedManually}
-                onImportJSON={importFromJSON}
-                onNavigateToCategory={navigateToCategory}
-                activeMonth={activeMonth}
-                styles={styles}
-              />
-            )}
+        <div style={styles.content} data-swipe-surface {...swipe.handlers}>
+          <div className="byb-swipe-track" ref={swipe.trackRef}>
+            <div key={view} className={viewAnim === "none" ? undefined : viewAnim ? `byb-view-${viewAnim}` : "byb-view"}>
+              {view === "dashboard" && (
+                <Dashboard
+                  activeMonth={activeMonth}
+                  transactions={transactions}
+                  categories={categories}
+                  recurring={recurring}
+                  styles={styles}
+                  unallocatedBalance={unallocatedBalance}
+                  onTransferEnvelope={transferEnvelope}
+                  onAddTx={saveTx}
+                  onAddIncome={addIncome}
+                  activeUserId={activeUserId}
+                  txFormOpen={txFormOpen}
+                  setTxFormOpen={setTxFormOpen}
+                  setEditingTx={setEditingTx}
+                  onReconcile={reconcileEnvelopes}
+                  onNavigateToCategory={navigateToCategory}
+                  onFillSingleEnvelope={fillEnvelope}
+                  incomeFlowOpen={incomeFlowOpen}
+                  setIncomeFlowOpen={setIncomeFlowOpen}
+                />
+              )}
+              {view === "transactions" && (
+                <TransactionsView
+                  transactions={transactions}
+                  categories={categories}
+                  users={users}
+                  categoriesById={categoriesById}
+                  usersById={usersById}
+                  activeMonth={activeMonth}
+                  activeUserId={activeUserId}
+                  txFilters={txFilters}
+                  setTxFilters={setTxFilters}
+                  editingTx={editingTx}
+                  setEditingTx={setEditingTx}
+                  txFormOpen={txFormOpen}
+                  setTxFormOpen={setTxFormOpen}
+                  saveTx={saveTx}
+                  deleteTx={deleteTx}
+                  onTransferEnvelope={transferEnvelope}
+                  onAddIncome={addIncome}
+                  incomeFlowOpen={incomeFlowOpen}
+                  setIncomeFlowOpen={setIncomeFlowOpen}
+                  unallocatedBalance={unallocatedBalance}
+                  recurring={recurring}
+                  reconcileLog={reconcileLog}
+                  styles={styles}
+                />
+              )}
+              {view === "categories" && (
+                <EnvelopesView
+                  categories={categories}
+                  editingCat={editingCat}
+                  setEditingCat={setEditingCat}
+                  catFormOpen={catFormOpen}
+                  setCatFormOpen={setCatFormOpen}
+                  saveCat={saveCat}
+                  deleteCat={deleteCat}
+                  unallocatedBalance={unallocatedBalance}
+                  onFillWithIncome={fillAllWithMultipleIncome}
+                  onFillSingleEnvelope={fillEnvelope}
+                  onSetupBaseAmounts={setupBaseAmounts}
+                  recurring={recurring}
+                  onReorderCats={reorderCategories}
+                  onNavigateToCategory={navigateToCategory}
+                  styles={styles}
+                />
+              )}
+              {view === "recurring" && (
+                <RecurringView
+                  recurring={recurring}
+                  categories={categories}
+                  users={users}
+                  categoriesById={categoriesById}
+                  activeUserId={activeUserId}
+                  editingRule={editingRule}
+                  setEditingRule={setEditingRule}
+                  ruleFormOpen={ruleFormOpen}
+                  setRuleFormOpen={setRuleFormOpen}
+                  saveRule={saveRule}
+                  deleteRule={deleteRule}
+                  postDueRecurrences={postDueRecurrences}
+                  styles={styles}
+                />
+              )}
+              {view === "reports" && (
+                <ReportsView
+                  transactions={transactions}
+                  categories={categories}
+                  categoriesById={categoriesById}
+                  usersById={usersById}
+                  reportRange={reportRange}
+                  setReportRange={setReportRange}
+                  handleExport={handleExport}
+                  assets={assets}
+                  onSaveAsset={saveAsset}
+                  onDeleteAsset={deleteAsset}
+                  transfers={transfers}
+                  reconcileLog={reconcileLog}
+                  unallocatedBalance={unallocatedBalance}
+                  onSetUnallocated={setUnallocatedManually}
+                  onImportJSON={importFromJSON}
+                  onNavigateToCategory={navigateToCategory}
+                  activeMonth={activeMonth}
+                  styles={styles}
+                />
+              )}
+            </div>
           </div>
         </div>
         <div style={styles.footer}>
-          <span>Running balance: <strong style={{ color: runningBalance >= 0 ? PALETTE.primaryDeep : PALETTE.warn }} data-testid="running-balance">{fmtAUD(runningBalance)}</strong></span>
+          <span>Running balance: <strong style={{ color: runningBalance >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }} data-testid="running-balance">{fmtAUD(runningBalance)}</strong></span>
           <span style={{ fontSize: 11, color: styles.textMuted, textAlign: "center" }}>BYB! is for personal use only — not financial advice. Use at your own risk.</span>
           <span>Active: {activeUser?.name}{lastUpdated ? ` · last updated ${lastUpdated.slice(0, 10)}` : ""}</span>
         </div>

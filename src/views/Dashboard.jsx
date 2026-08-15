@@ -7,13 +7,16 @@ import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
 import { AnimatedCurrency } from "../components/AnimatedNumber.jsx";
 import { QuickActionsSheet } from "../components/QuickActions.jsx";
 import { askConfirm } from "../components/ConfirmDialog.jsx";
+import { EmptyState } from "../components/EmptyState.jsx";
 import { useLongPress } from "../hooks/useLongPress.js";
-import { IconWallet, IconHistory, IconList, IconZap } from "../components/Icons.jsx";
+import { envelopeStatus, statusColour, fillFraction } from "../styles/envelopeStatus.js";
+import { IconWallet, IconHistory, IconList, IconZap, IconEnvelope, IconRepeat } from "../components/Icons.jsx";
 
 function EnvelopeRow({ cat, spent, styles, onNavigate, onLongPress }) {
   const balance = cat.envelopeBalance || 0;
   const base = cat.baseAmount || 0;
-  const balColour = balance < 0 ? PALETTE.danger : balance < base * 0.2 ? PALETTE.warn : PALETTE.primaryDeep;
+  const status = envelopeStatus(balance, base);
+  const balColour = statusColour(status);
   const lp = useLongPress(() => onLongPress(cat));
   return (
     <div
@@ -33,8 +36,8 @@ function EnvelopeRow({ cat, spent, styles, onNavigate, onLongPress }) {
         <span style={{ fontSize: 11, color: styles.textMuted }}>/ {fmtAUD(base)}</span>
       </div>
       {base > 0 && (
-        <div style={{ height: 5, background: styles.barTrack, borderRadius: 3, overflow: "hidden", marginBottom: 6 }}>
-          <div className="byb-bar-fill" style={{ width: `${Math.min(100, Math.max(0, (balance / base) * 100))}%`, height: "100%", background: balColour, borderRadius: 3 }} />
+        <div className="byb-meter" style={{ height: 6, marginBottom: 6 }} data-env-status={status}>
+          <div className="byb-meter-fill" style={{ width: `${fillFraction(balance, base) * 100}%`, background: balColour }} />
         </div>
       )}
       <div style={{ fontSize: 11, color: styles.textMuted }}>
@@ -80,7 +83,7 @@ export function Dashboard({
       <div style={{ display: "flex", alignItems: mobile ? "flex-start" : "center", gap: mobile ? 10 : 12, marginBottom: mobile ? 14 : 20, flexDirection: mobile ? "column" : "row" }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 11, color: styles.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>Unallocated</div>
-          <div style={{ fontSize: mobile ? 26 : 32, fontWeight: 800, letterSpacing: -0.5, color: unallocatedBalance < 0 ? PALETTE.danger : PALETTE.primaryDeep, lineHeight: 1.1 }}>
+          <div style={{ fontSize: mobile ? 26 : 32, fontWeight: 800, letterSpacing: -0.5, color: unallocatedBalance < 0 ? "var(--byb-over)" : "var(--byb-ok)", lineHeight: 1.1 }}>
             <AnimatedCurrency value={unallocatedBalance} data-testid="unallocated-balance" />
           </div>
           <div style={{ fontSize: 11, color: styles.textMuted }}>
@@ -132,14 +135,26 @@ export function Dashboard({
           />
         ))}
         {expenseCats.length === 0 && (
-          <div style={{ padding: "20px", color: styles.textMuted, fontSize: 13 }}>No envelopes yet. Head to the Envelopes tab to create one.</div>
+          <EmptyState
+            icon={IconEnvelope}
+            title="No envelopes yet"
+            hint="Set up envelopes on the Envelopes tab and this becomes the month at a glance."
+            styles={styles}
+          />
         )}
       </div>
 
       {/* Upcoming bills */}
       <div style={styles.sectionTitle}>Upcoming bills</div>
       <div style={styles.card}>
-        {upcoming.length === 0 && <div style={{ color: styles.textMuted, fontSize: 13 }}>Nothing scheduled.</div>}
+        {upcoming.length === 0 && (
+          <EmptyState
+            icon={IconRepeat}
+            title="Nothing scheduled"
+            hint="Add your regular payments on the Recurring tab so none of them catch you out."
+            styles={styles}
+          />
+        )}
         <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(2, 1fr)", gap: mobile ? 8 : 12 }}>
           {upcoming.map((r) => (
             <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: styles.surface, borderRadius: 8, border: `1px solid ${styles.border}` }}>
@@ -147,7 +162,7 @@ export function Dashboard({
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</div>
                 <div style={{ fontSize: 11, color: styles.textMuted, marginTop: 2 }}>{r.nextDueDate} · {r.frequency}</div>
               </div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: r.type === "income" ? PALETTE.primaryDeep : styles.text, fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: r.type === "income" ? "var(--byb-ok)" : styles.text, fontVariantNumeric: "tabular-nums" }}>
                 {r.type === "income" ? "+" : "−"}{fmtAUD(r.amount)}
               </div>
             </div>

@@ -3,7 +3,8 @@ import { PALETTE } from "../lib/constants.js";
 import { fmtAUD, monthKey, todayISO, formatMonth } from "../lib/utils.js";
 import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { PieChart } from "../components/PieChart.jsx";
-import { IconHistory } from "../components/Icons.jsx";
+import { EmptyState } from "../components/EmptyState.jsx";
+import { IconHistory, IconWallet, IconChart } from "../components/Icons.jsx";
 
 function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   const [editing, setEditing] = useState(false);
@@ -49,7 +50,7 @@ function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
       <span style={{ fontSize: 12, color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
         {fmtAUD(m.before)} → {fmtAUD(m.after)}
       </span>
-      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 13, minWidth: 88, textAlign: "right", color: m.amount < 0 ? styles.text : PALETTE.primaryDeep }}>
+      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 13, minWidth: 88, textAlign: "right", color: m.amount < 0 ? styles.text : "var(--byb-ok)" }}>
         {m.amount < 0 ? "−" : "+"}{fmtAUD(Math.abs(m.amount))}
       </span>
     </div>
@@ -66,7 +67,7 @@ function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
           </span>
         </span>
         <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
-          <span style={{ color: PALETTE.primaryDeep, fontWeight: 700 }}>{fmtAUD(entry.pooled)}</span> redistributed
+          <span style={{ color: "var(--byb-ok)", fontWeight: 700 }}>{fmtAUD(entry.pooled)}</span> redistributed
         </span>
       </div>
       <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>
@@ -105,7 +106,7 @@ function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
           )}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 12, paddingTop: 8, borderTop: `1px solid ${styles.border}`, fontSize: 13 }}>
             <span style={{ color: styles.textMuted }}>Returned to Unallocated</span>
-            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: PALETTE.primaryDeep }}>{fmtAUD(entry.returned)}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--byb-ok)" }}>{fmtAUD(entry.returned)}</span>
           </div>
         </div>
       )}
@@ -233,7 +234,7 @@ My transactions and bank statement:
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
           <div>
             <div style={styles.kpiLabel}>Total net worth</div>
-            <div style={{ fontSize: styles.isMobile ? 28 : 36, fontWeight: 800, letterSpacing: -1, color: netWorth >= 0 ? PALETTE.primaryDeep : PALETTE.warn, lineHeight: 1.1 }}>
+            <div style={{ fontSize: styles.isMobile ? 28 : 36, fontWeight: 800, letterSpacing: -1, color: netWorth >= 0 ? "var(--byb-ok)" : "var(--byb-over)", lineHeight: 1.1 }}>
               {fmtAUD(netWorth)}
             </div>
           </div>
@@ -256,12 +257,12 @@ My transactions and bank statement:
 
         {/* Asset list */}
         {assets.length === 0 && assetForm === null && (
-          <div style={{ color: styles.textMuted, fontSize: 13 }}>No assets added yet. Hit "+ Add asset" to track superannuation, property, savings accounts, etc.</div>
+          <EmptyState icon={IconWallet} title="No assets added yet." hint="Track superannuation, property, savings accounts and anything else you own, for the full picture rather than just the spending." styles={styles} />
         )}
         {assets.map((a) => (
           <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${styles.border}`, gap: 8 }}>
             <span style={{ fontWeight: 500, flex: 1 }}>{a.name}</span>
-            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: PALETTE.primaryDeep, fontSize: 15, whiteSpace: "nowrap" }}>{fmtAUD(a.value)}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--byb-ok)", fontSize: 15, whiteSpace: "nowrap" }}>{fmtAUD(a.value)}</span>
             <button style={{ ...styles.buttonGhost, fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => openEditAsset(a)}>Edit</button>
             <button style={{ ...styles.buttonDanger, fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => onDeleteAsset(a.id)}>Delete</button>
           </div>
@@ -310,7 +311,7 @@ My transactions and bank statement:
                 {importCopied ? "Copied!" : "Copy prompt"}
               </button>
             </div>
-            <pre style={{ background: styles.dark ? "#111" : "#F3F4F6", border: `1px solid ${styles.border}`, borderRadius: 6, padding: "10px 12px", fontSize: 11, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", color: styles.text, maxHeight: 200, overflow: "auto", margin: 0 }}>
+            <pre style={{ background: "var(--byb-surface-sunken)", border: `1px solid ${styles.border}`, borderRadius: 6, padding: "10px 12px", fontSize: 11, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", color: styles.text, maxHeight: 200, overflow: "auto", margin: 0 }}>
               {aiPrompt}
             </pre>
           </div>
@@ -334,7 +335,7 @@ My transactions and bank statement:
       <div style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: styles.isMobile ? 10 : 12, marginBottom: styles.isMobile ? 16 : 24 }}>
         <div style={styles.card}><div style={styles.kpiLabel}>Income</div><div style={styles.kpiValue}>{fmtAUD(income)}</div></div>
         <div style={styles.card}><div style={styles.kpiLabel}>Expenses</div><div style={styles.kpiValue}>{fmtAUD(expenses)}</div></div>
-        <div style={styles.card}><div style={styles.kpiLabel}>Net</div><div style={{ ...styles.kpiValue, color: net >= 0 ? PALETTE.primaryDeep : PALETTE.warn }}>{fmtAUD(net)}</div></div>
+        <div style={styles.card}><div style={styles.kpiLabel}>Net</div><div style={{ ...styles.kpiValue, color: net >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }}>{fmtAUD(net)}</div></div>
         <div style={styles.card}><div style={styles.kpiLabel}>Avg daily spend</div><div style={styles.kpiValue}>{fmtAUD(avgDaily)}</div></div>
         <div style={{ ...styles.card, gridColumn: styles.isMobile ? "span 2" : "auto" }}><div style={styles.kpiLabel}>Top category</div><div style={{ ...styles.kpiValue, fontSize: 16 }}>{topCat}</div></div>
       </div>
@@ -378,7 +379,7 @@ My transactions and bank statement:
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12 }}>
                 <span style={{ color: styles.text, fontWeight: 500 }}>{formatMonth(m.month)}</span>
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>
-                  <span style={{ color: PALETTE.primaryDeep }}>+{fmtAUD(m.income)}</span>
+                  <span style={{ color: "var(--byb-ok)" }}>+{fmtAUD(m.income)}</span>
                   {" · "}
                   <span style={{ color: PALETTE.warn }}>−{fmtAUD(m.expense)}</span>
                 </span>
@@ -391,7 +392,7 @@ My transactions and bank statement:
             </div>
             {!styles.isMobile && (
               <div style={{ fontSize: 11, color: styles.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                <div style={{ color: PALETTE.primaryDeep }}>+{fmtAUD(m.income)}</div>
+                <div style={{ color: "var(--byb-ok)" }}>+{fmtAUD(m.income)}</div>
                 <div>−{fmtAUD(m.expense)}</div>
               </div>
             )}
@@ -415,7 +416,11 @@ My transactions and bank statement:
               </div>
             </div>
           ))}
-          {breakdown.length === 0 && <div style={{ ...styles.card, textAlign: "center", color: styles.textMuted }}>No expenses in range.</div>}
+          {breakdown.length === 0 && (
+            <div style={{ ...styles.card, padding: 0 }}>
+              <EmptyState icon={IconChart} title="No expenses in range." hint="Widen the date range above, or log some spending, and the breakdown appears here." styles={styles} />
+            </div>
+          )}
         </div>
       ) : (
         <div style={styles.card}>
@@ -439,7 +444,11 @@ My transactions and bank statement:
                   <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{b.count}</td>
                 </tr>
               ))}
-              {breakdown.length === 0 && <tr><td style={{ ...styles.td, textAlign: "center", color: styles.textMuted, padding: 24 }} colSpan={5}>No expenses in range.</td></tr>}
+              {breakdown.length === 0 && (
+                <tr><td style={{ ...styles.td, padding: 0 }} colSpan={5}>
+                  <EmptyState icon={IconChart} title="No expenses in range." hint="Widen the date range above, or log some spending, and the breakdown appears here." styles={styles} />
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>

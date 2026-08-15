@@ -1,40 +1,169 @@
 /* ── BYB! global styles ─────────────────────────────────────────────────────
-   Theme variables + motion. Component layout still uses the styles object
-   (buildStyles.js); this file provides what inline styles cannot:
-   transitions, animations, hover/focus states, and scrollbar styling. */
+   This file owns the design primitives. Every colour, space, radius, shadow
+   and type size in the app resolves to one of the custom properties below —
+   buildStyles.js composes them into layout, and components override layout
+   inline, but none of them should be inventing a new hex or a new radius.
+
+   It also provides what inline styles cannot: transitions, animations,
+   hover/focus states, sticky offsets and scrollbar styling. */
 
 :root {
+  /* ── Brand ───────────────────────────────────────────────────────────────
+     #7FB069 is the identity: the logo, the primary button, the active tab.
+     It is never used to say "this envelope is healthy" — see status below. */
   --byb-primary: #7FB069;
   --byb-primary-deep: #5F8A4F;
   --byb-secondary: #B8D4AE;
+  --byb-primary-tint: #EDF3E8;      /* active nav ground, opened panels */
+  --byb-primary-ring: rgba(127, 176, 105, 0.25);
+
+  /* ── Semantic status ─────────────────────────────────────────────────────
+     Separate hues from the brand, so a green thing on screen is the app's
+     identity and a status colour is a statement about money. On-track leans
+     teal against the brand's yellow-green; low is amber; overspent is red.
+     All three clear 4.5:1 on their theme's page background. */
+  --byb-ok: #257A59;
+  --byb-ok-soft: #E3F1EA;
+  --byb-low: #9A6210;
+  --byb-low-soft: #FAEEDA;
+  --byb-over: #C7362C;
+  --byb-over-soft: #FBE5E3;
+
+  /* Reserved for destructive controls, not for envelope health. */
   --byb-warn: #C27B3F;
   --byb-danger: #DC2626;
 
+  /* ── Surfaces ────────────────────────────────────────────────────────────
+     page → card → sunken well. Cards separate from the page by elevation
+     rather than by tint, which is what stops the app reading as a wireframe. */
   --byb-surface: #FFFFFF;
-  --byb-surface-alt: #F7F8F6;
+  --byb-surface-alt: #FAFBF9;
+  --byb-surface-sunken: #F1F3EF;
   --byb-text: #1A1A1A;
   --byb-text-muted: #6B6F6B;
   --byb-border: #E4E8E0;
-  --byb-bar-track: #E4E8E0;
-  --byb-overlay: rgba(0, 0, 0, 0.5);
+  --byb-border-strong: #D2D8CC;
+  --byb-bar-track: var(--byb-surface-sunken);
+  --byb-overlay: rgba(24, 32, 22, 0.5);
 
-  --byb-radius: 10px;
+  /* ── Elevation ───────────────────────────────────────────────────────────
+     Two-part shadows: a tight contact shadow plus a wide ambient one. The
+     tint is the brand's green-grey rather than pure black, so shadows sit in
+     the palette instead of greying it. */
+  --byb-elev-1: 0 1px 2px rgba(24, 32, 22, 0.05), 0 1px 3px rgba(24, 32, 22, 0.06);
+  --byb-elev-2: 0 2px 4px rgba(24, 32, 22, 0.06), 0 6px 16px rgba(24, 32, 22, 0.08);
+  --byb-elev-3: 0 6px 12px rgba(24, 32, 22, 0.08), 0 18px 40px rgba(24, 32, 22, 0.16);
+  --byb-shadow-card: var(--byb-elev-1);   /* pre-token name, still referenced */
+  --byb-shadow-pop: var(--byb-elev-3);
+
+  /* ── Spacing ─────────────────────────────────────────────────────────────
+     4px base step. */
+  --byb-space-1: 4px;
+  --byb-space-2: 8px;
+  --byb-space-3: 12px;
+  --byb-space-4: 16px;
+  --byb-space-5: 20px;
+  --byb-space-6: 24px;
+  --byb-space-7: 28px;
+  --byb-space-8: 32px;
+
+  /* ── Radii ───────────────────────────────────────────────────────────────*/
+  --byb-radius-xs: 4px;
   --byb-radius-sm: 6px;
-  --byb-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05);
-  --byb-shadow-pop: 0 8px 40px rgba(0, 0, 0, 0.22);
+  --byb-radius: 10px;
+  --byb-radius-lg: 14px;
+  --byb-radius-pill: 999px;
+
+  /* ── Type ────────────────────────────────────────────────────────────────*/
+  --byb-font: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --byb-text-2xs: 10px;
+  --byb-text-xs: 11px;
+  --byb-text-sm: 12px;
+  --byb-text-md: 13px;
+  --byb-text-lg: 14px;
+  --byb-text-base: 15px;
+  --byb-text-title: 18px;
+  --byb-text-xl: 22px;
+  --byb-text-2xl: 28px;
+  --byb-text-3xl: 34px;
+
+  /* ── Layout ──────────────────────────────────────────────────────────────
+     The app header is position:sticky at top:0 and nothing else could know how
+     tall it is, so anything that wants to pin underneath it slid beneath it
+     instead. buildStyles gives the header exactly this height, which makes the
+     token true by construction rather than by a measurement that drifts. */
+  --byb-header-h: 69px;
+  --byb-bottom-nav-h: 64px;
+
+  /* Responsive metrics. These are the same decision at two sizes, so they are
+     one token with a breakpoint rather than an isMobile branch in JS —
+     buildStyles is then left holding only the decisions that genuinely change
+     the structure of the page (a rail becomes a bar, a row becomes a column). */
+  --byb-gutter: 32px;
+  --byb-content-pad: 28px 32px;
+  --byb-card-pad: 20px;
+  --byb-tap-min: auto;              /* fingers need a floor; cursors do not */
+  --byb-btn-pad: 8px 16px;
+  --byb-btn-ghost-pad: 8px 14px;
+  --byb-input-pad: 8px 10px;
+  --byb-input-text: 14px;           /* 16px on phones, or iOS zooms the page */
+  --byb-view-title: 22px;
+  --byb-kpi-text: 28px;
+
+  /* Toast: a dark chip in light mode, a raised one in dark — a #1A1A1A chip on
+     a #121412 page is the flatness this restyle is meant to remove. */
+  --byb-inverse-surface: #1F231E;
+  --byb-inverse-text: #F5F7F3;
 
   --byb-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
+@media (max-width: 767px) {
+  :root {
+    --byb-header-h: 53px;
+    --byb-gutter: 14px;
+    --byb-content-pad: 16px 12px;
+    --byb-card-pad: 14px;
+    --byb-tap-min: 44px;
+    --byb-btn-pad: 12px 18px;
+    --byb-btn-ghost-pad: 11px 14px;
+    --byb-input-pad: 11px 12px;
+    --byb-input-text: 16px;
+    --byb-view-title: 18px;
+    --byb-kpi-text: 22px;
+  }
+}
+
 [data-theme="dark"] {
-  --byb-surface: #1A1A1A;
-  --byb-surface-alt: #242624;
-  --byb-text: #F5F5F5;
-  --byb-text-muted: #9AA09A;
-  --byb-border: #2F322F;
-  --byb-bar-track: #2F322F;
+  /* Status colours lift on dark — the light-theme values are unreadable at
+     these luminances. */
+  --byb-ok: #57C79B;
+  --byb-ok-soft: #16302A;
+  --byb-low: #E0A63C;
+  --byb-low-soft: #33270F;
+  --byb-over: #F2766B;
+  --byb-over-soft: #38201E;
+
+  --byb-primary-tint: #23301F;
+
+  /* A real ramp rather than one flat near-black: the page recedes, cards sit
+     above it, wells sink below. Shadows barely read on dark, so most of the
+     separation has to come from the surfaces themselves. */
+  --byb-surface: #121412;
+  --byb-surface-alt: #1C1F1C;
+  --byb-surface-sunken: #0E100E;
+  --byb-text: #F2F4F1;
+  --byb-text-muted: #9AA396;
+  --byb-border: #2E332E;
+  --byb-border-strong: #3C423B;
   --byb-overlay: rgba(0, 0, 0, 0.65);
-  --byb-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+  --byb-elev-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --byb-elev-2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 8px 20px rgba(0, 0, 0, 0.35);
+  --byb-elev-3: 0 10px 24px rgba(0, 0, 0, 0.5), 0 24px 56px rgba(0, 0, 0, 0.45);
+
+  --byb-inverse-surface: #2E332E;
+  --byb-inverse-text: #F2F4F1;
 }
 
 html {
@@ -74,7 +203,7 @@ input, select, textarea {
 input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: none;
   border-color: var(--byb-primary) !important;
-  box-shadow: 0 0 0 3px rgba(127, 176, 105, 0.25);
+  box-shadow: 0 0 0 3px var(--byb-primary-ring);
 }
 
 button:focus-visible {
@@ -116,12 +245,23 @@ button:focus-visible {
 .byb-view-left { animation: byb-view-in-left 0.22s var(--byb-ease); }
 .byb-view-right { animation: byb-view-in-right 0.22s var(--byb-ease); }
 
-/* While swiping between tabs, the content tracks the finger */
+/* While swiping between tabs, the content tracks the finger.
+   The duration is written by useSwipeNavigation — it is timed off how far the
+   view still has to travel at the speed the finger left at, so it cannot be a
+   constant here. 0ms is the resting value, which is what a finger-tracking
+   frame needs. `will-change` is only present while a gesture is in flight:
+   left on permanently it would make this element a containing block and
+   re-anchor the position:fixed FAB and long-press sheets inside it. */
 .byb-swipe-track {
-  transition: transform 0.2s var(--byb-ease);
+  transition-property: transform;
+  transition-timing-function: var(--byb-ease);
+  transition-duration: 0ms;
 }
+
 .byb-swipe-track.byb-swiping {
-  transition: none;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* ── Forms / panels slide open ─────────────────────────────────────────── */
@@ -230,15 +370,118 @@ button:focus-visible {
   .byb-skeleton-main { padding: 16px 12px; }
 }
 
+/* ── Sticky month headings in the history list ─────────────────────────────
+   The app header is sticky at top:0, so a heading pinned at top:0 slides
+   underneath it. --byb-header-h is what the header actually is, so these pin
+   just below it.
+
+   Each month group is its own element (.byb-month-group). Without that all the
+   headings share one containing block and stack on top of each other at the
+   same offset; with it, each heading is pushed out by the next group, which is
+   the behaviour a reader expects. */
+
+.byb-month-heading {
+  position: sticky;
+  top: var(--byb-header-h);
+  z-index: 4;
+}
+
+/* Table cells lose their collapsed borders once they are sticky, so the rule
+   under a pinned heading row is painted as an inset shadow instead. */
+.byb-month-heading-cell {
+  position: sticky;
+  top: var(--byb-header-h);
+  z-index: 4;
+  background: var(--byb-surface);
+  box-shadow: inset 0 -1px 0 var(--byb-border);
+}
+
+/* ── Envelope fill meter ───────────────────────────────────────────────────
+   The envelope card's hero object: how full this envelope is against the
+   amount it is meant to hold. */
+
+.byb-meter {
+  position: relative;
+  height: 8px;
+  border-radius: var(--byb-radius-pill);
+  background: var(--byb-bar-track);
+  overflow: hidden;
+}
+
+.byb-meter-fill {
+  height: 100%;
+  border-radius: var(--byb-radius-pill);
+  transition: width 0.45s var(--byb-ease), background-color 0.3s var(--byb-ease);
+}
+
+/* ── Empty states ──────────────────────────────────────────────────────────*/
+
+.byb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--byb-space-2);
+  text-align: center;
+  padding: var(--byb-space-8) var(--byb-space-5);
+  color: var(--byb-text-muted);
+}
+
+.byb-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--byb-radius-pill);
+  background: var(--byb-surface-sunken);
+  color: var(--byb-text-muted);
+  margin-bottom: var(--byb-space-1);
+}
+
+.byb-empty-title {
+  font-size: var(--byb-text-lg);
+  font-weight: 600;
+  color: var(--byb-text);
+}
+
+.byb-empty-hint {
+  font-size: var(--byb-text-md);
+  max-width: 34ch;
+  line-height: 1.6;
+}
+
 /* ── Hover affordances (mouse only) ────────────────────────────────────── */
 
 @media (hover: hover) and (pointer: fine) {
-  .byb-hover-row:hover { background: var(--byb-surface-alt); }
+  .byb-hover-row:hover { background: var(--byb-surface-sunken); }
   .byb-hover-card:hover {
     border-color: var(--byb-primary) !important;
-    box-shadow: 0 2px 12px rgba(127, 176, 105, 0.18);
+    box-shadow: var(--byb-elev-2), 0 0 0 1px var(--byb-primary);
   }
   .byb-nav-item:hover { color: var(--byb-text) !important; }
+}
+
+/* A card that can be picked up says so by rising slightly under the finger. */
+.byb-card-press:active {
+  transform: scale(0.995);
+}
+
+/* ── Theme switching ───────────────────────────────────────────────────────
+   A theme swap changes the custom properties under every element at once.
+   Chrome does not re-resolve a var()-valued property that is mid-transition,
+   so a card whose box-shadow is `var(--byb-elev-1)` and which also transitions
+   box-shadow was left stranded on the outgoing theme's elevation — light cards
+   wearing the dark shadow until something else forced a repaint.
+
+   Nothing should cross-fade on a theme change in any case: the user asked for
+   the other theme, not for a dissolve. Transitions are suppressed for the frame
+   the swap happens on, which fixes the stranding and the dissolve together. */
+
+html.byb-theme-switching,
+html.byb-theme-switching *,
+html.byb-theme-switching *::before,
+html.byb-theme-switching *::after {
+  transition: none !important;
 }
 
 /* ── Reduced motion ────────────────────────────────────────────────────── */

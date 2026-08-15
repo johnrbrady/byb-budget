@@ -32,7 +32,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
 
   if (!mode) {
     return (
-      <div className="byb-panel" style={{ ...styles.card, borderColor: PALETTE.primary, background: styles.dark ? "#1A2A1A" : "#EDF3E8", marginBottom: 20 }}>
+      <div className="byb-panel" style={{ ...styles.card, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)", marginBottom: 20 }}>
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>Welcome! Let's set up your envelopes.</div>
         <div style={{ fontSize: 13, color: styles.textMuted, marginBottom: 20 }}>This is your first time here. Choose how you want to set your monthly budget amounts.</div>
         <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
@@ -60,7 +60,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
 
   if (mode === "auto") {
     return (
-      <div className="byb-panel" style={{ ...styles.card, borderColor: PALETTE.primary, background: styles.dark ? "#1A2A1A" : "#EDF3E8", marginBottom: 20 }}>
+      <div className="byb-panel" style={{ ...styles.card, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)", marginBottom: 20 }}>
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Fill automatically</div>
         <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 14 }}>Enter your monthly income. We will calculate suggested amounts for each envelope. You can adjust any of them before applying.</div>
 
@@ -94,7 +94,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
               <span>Total allocated:</span>
-              <span style={{ color: overBudget(autoTotal) ? "#DC2626" : PALETTE.primaryDeep }}>{fmtAUD(autoTotal)}</span>
+              <span style={{ color: overBudget(autoTotal) ? "var(--byb-over)" : "var(--byb-ok)" }}>{fmtAUD(autoTotal)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: styles.textMuted, marginBottom: 12 }}>
               <span>Monthly income:</span><span>{fmtAUD(parsedIncome)}</span>
@@ -115,7 +115,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
     const cur = expCats[step];
     const isLast = step === expCats.length - 1;
     return (
-      <div className="byb-panel" style={{ ...styles.card, borderColor: PALETTE.primary, background: styles.dark ? "#1A2A1A" : "#EDF3E8", marginBottom: 20 }}>
+      <div className="byb-panel" style={{ ...styles.card, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)", marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>Fill one by one</div>
           <div style={{ fontSize: 11, color: styles.textMuted }}>{step + 1} of {expCats.length}</div>
@@ -151,7 +151,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
             {overBudget(manualTotal) ? overBudgetBanner(manualTotal) : (
               <div style={{ fontSize: 12, color: styles.textMuted }}>
                 Allocated so far: {fmtAUD(manualTotal)} of {fmtAUD(parsedIncome)}
-                <span style={{ marginLeft: 6, color: PALETTE.primaryDeep }}> ({fmtAUD(parsedIncome - manualTotal)} remaining)</span>
+                <span style={{ marginLeft: 6, color: "var(--byb-ok)" }}> ({fmtAUD(parsedIncome - manualTotal)} remaining)</span>
               </div>
             )}
           </div>
