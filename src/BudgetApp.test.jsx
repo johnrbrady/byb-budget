@@ -323,3 +323,271 @@ describe("Income allocation integrity", () => {
     expect(saved.unallocatedBalance).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Money-movement integrity (DEF-004, DEF-005, DEF-010)
+//
+// The rule these all serve: household money = unallocatedBalance + the sum of
+// every envelopeBalance. Nothing but adding or removing a real transaction may
+// change that total, and nothing may move money between the two halves without
+// telling the user first. Each test asserts the total AND the distribution,
+// because two of these defects conserve the total while quietly relocating the
+// money — a total-only check would pass on the broken code.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Money movement integrity", () => {
+  const salary = { id: "c-inc", name: "Salary", type: "income", colour: "#7FB069", monthlyBudget: null };
+  // The protected envelope orphaned items are reassigned to, spelled out here so
+  // the test pins the id rather than borrowing the app's own constant.
+  const INCIDENTALS = { id: "c-incidentals", name: "Household Incidentals", type: "expense", colour: "#9CA3AF", baseAmount: 0, envelopeBalance: 0, isAccumulating: false, protected: true };
+  const envelope = (id, name, balance, base = 100) =>
+    ({ id, name, type: "expense", colour: "#7FB069", baseAmount: base, envelopeBalance: balance, isAccumulating: false });
+
+  // Household total as the app itself defines it, read off a persisted payload.
+  const householdTotal = (saved) =>
+    saved.categories.reduce((s, c) => s + (c.envelopeBalance || 0), 0) + saved.unallocatedBalance;
+
+  const balanceOf = (saved, id) => saved.categories.find((c) => c.id === id).envelopeBalance;
+  const lastSave = (onSave) => onSave.mock.calls[onSave.mock.calls.length - 1][0];
+
+  function renderWith(data) {
+    const onSave = jest.fn();
+    render(
+      <BudgetApp
+        onSave={onSave}
+        initialData={{ users: baseUsers, transactions: [], recurring: [], assets: [], transfers: [], reconcileLog: [], ...data }}
+      />
+    );
+    return onSave;
+  }
+
+  // ── DEF-004 ───────────────────────────────────────────────────────────────
+  describe("editing an allocated income transaction", () => {
+    const incomeTx = (allocations, amount) => ({
+      id: "t-inc", date: "2026-06-01", amount, type: "income", categoryId: "c-inc",
+      description: "Payslip", isRecurring: false, recurringId: null, allocations,
+      addedBy: "u-user1", createdAt: "2026-06-01T00:00:00Z",
+    });
+
+    // Retype only the description and save. Nothing about the money changed, so
+    // nothing about the money may move.
+    const editDescription = (text) => {
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      fireEvent.click(within(screen.getByTestId("tx-row-t-inc")).getByText("Edit"));
+      const form = screen.getByTestId("tx-form");
+      fireEvent.change(within(form).getByTestId("tx-description"), { target: { value: text } });
+      fireEvent.click(within(form).getByTestId("tx-save"));
+    };
+
+    test("changing only the description leaves a single-envelope allocation where it is", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 50,
+        categories: [salary, envelope("c-a", "Rent", 300), envelope("c-b", "Food", 200)],
+        transactions: [incomeTx([{ catId: "c-a", amount: 300 }], 300)],
+      });
+      await settle();
+      editDescription("Payslip — June");
+
+      const saved = lastSave(onSave);
+      expect(saved.transactions.find((t) => t.id === "t-inc").description).toBe("Payslip — June");
+      expect(balanceOf(saved, "c-a")).toBe(300);
+      expect(balanceOf(saved, "c-b")).toBe(200);
+      expect(saved.unallocatedBalance).toBe(50);
+      expect(householdTotal(saved)).toBe(550);
+    });
+
+    test("the allocation survives a round trip through the form as an allocation, not just a balance", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 50,
+        categories: [salary, envelope("c-a", "Rent", 300)],
+        transactions: [incomeTx([{ catId: "c-a", amount: 300 }], 300)],
+      });
+      await settle();
+      editDescription("Payslip — June");
+
+      const saved = lastSave(onSave);
+      expect(saved.transactions.find((t) => t.id === "t-inc").allocations).toEqual([{ catId: "c-a", amount: 300 }]);
+    });
+
+    test("changing only the description leaves a multi-envelope split intact", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 0,
+        categories: [salary, envelope("c-a", "Rent", 300), envelope("c-b", "Food", 200)],
+        transactions: [incomeTx([{ catId: "c-a", amount: 300 }, { catId: "c-b", amount: 200 }], 500)],
+      });
+      await settle();
+      editDescription("Payslip — June");
+
+      const saved = lastSave(onSave);
+      expect(balanceOf(saved, "c-a")).toBe(300);
+      expect(balanceOf(saved, "c-b")).toBe(200);
+      expect(saved.unallocatedBalance).toBe(0);
+      expect(householdTotal(saved)).toBe(500);
+      expect(saved.transactions.find((t) => t.id === "t-inc").allocations)
+        .toEqual([{ catId: "c-a", amount: 300 }, { catId: "c-b", amount: 200 }]);
+    });
+
+    test("clearing the envelope select returns a single allocation to unallocated", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 50,
+        categories: [salary, envelope("c-a", "Rent", 300)],
+        transactions: [incomeTx([{ catId: "c-a", amount: 300 }], 300)],
+      });
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      fireEvent.click(within(screen.getByTestId("tx-row-t-inc")).getByText("Edit"));
+      const form = screen.getByTestId("tx-form");
+      // The select must show the envelope the money is actually in…
+      expect(within(form).getByTestId("tx-allocate-envelope")).toHaveValue("c-a");
+      // …and clearing it is the one way to pull the money back out.
+      fireEvent.change(within(form).getByTestId("tx-allocate-envelope"), { target: { value: "" } });
+      fireEvent.click(within(form).getByTestId("tx-save"));
+
+      const saved = lastSave(onSave);
+      expect(balanceOf(saved, "c-a")).toBe(0);
+      expect(saved.unallocatedBalance).toBe(350);
+      expect(householdTotal(saved)).toBe(350);
+    });
+  });
+
+  // ── DEF-005 ───────────────────────────────────────────────────────────────
+  describe("deleting an envelope that holds money", () => {
+    const openDelete = (catId) => {
+      fireEvent.click(screen.getByTestId("nav-categories"));
+      fireEvent.click(within(document.querySelector(`[data-env-id="${catId}"]`)).getByText("Edit"));
+      fireEvent.click(screen.getByText("Delete envelope"));
+    };
+
+    test("a positive balance is returned to unallocated, and the dialog says so", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 100,
+        categories: [envelope("c-a", "Holiday", 250), envelope("c-b", "Food", 80)],
+      });
+      await settle();
+      openDelete("c-a");
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent(/\$250\.00/);
+      expect(dialog).toHaveTextContent(/[Uu]nallocated/);
+      fireEvent.click(within(dialog).getByTestId("confirm-ok"));
+      await settle();
+
+      const saved = lastSave(onSave);
+      expect(saved.categories.some((c) => c.id === "c-a")).toBe(false);
+      expect(saved.unallocatedBalance).toBe(350);
+      expect(householdTotal(saved)).toBe(430); // 100 + 250 + 80, unchanged
+    });
+
+    test("an overdrawn envelope takes its shortfall out of unallocated, and the dialog says so", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 100,
+        categories: [envelope("c-a", "Car repairs", -75), envelope("c-b", "Food", 80)],
+      });
+      await settle();
+      openDelete("c-a");
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent(/\$75\.00/);
+      expect(dialog).toHaveTextContent(/[Uu]nallocated/);
+      fireEvent.click(within(dialog).getByTestId("confirm-ok"));
+      await settle();
+
+      const saved = lastSave(onSave);
+      expect(saved.categories.some((c) => c.id === "c-a")).toBe(false);
+      expect(saved.unallocatedBalance).toBe(25);
+      expect(householdTotal(saved)).toBe(105); // 100 - 75 + 80, unchanged
+    });
+
+    test("a balance is carried across even when transactions have to be reassigned", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 0,
+        categories: [envelope("c-a", "Holiday", 250), { ...INCIDENTALS, envelopeBalance: 40 }],
+        transactions: [
+          { id: "t1", date: "2026-06-02", amount: 10, type: "expense", categoryId: "c-a", description: "Sunscreen", isRecurring: false, recurringId: null, addedBy: "u-user1", createdAt: "2026-06-02T00:00:00Z" },
+        ],
+      });
+      await settle();
+      openDelete("c-a");
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent(/\$250\.00/);
+      fireEvent.click(within(dialog).getByTestId("confirm-ok"));
+      await settle();
+
+      const saved = lastSave(onSave);
+      expect(saved.transactions[0].categoryId).toBe("c-incidentals");
+      expect(saved.unallocatedBalance).toBe(250);
+      expect(householdTotal(saved)).toBe(290); // 250 + 40, unchanged
+    });
+
+    test("cancelling the dialog moves nothing", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 100,
+        categories: [envelope("c-a", "Holiday", 250)],
+      });
+      await settle();
+      openDelete("c-a");
+
+      const dialog = await screen.findByRole("alertdialog");
+      fireEvent.click(within(dialog).getByText("Cancel"));
+      await settle();
+      expect(onSave).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── DEF-010 ───────────────────────────────────────────────────────────────
+  describe("filling a single envelope past the unallocated balance", () => {
+    const clickFill = (catId) => {
+      fireEvent.click(screen.getByTestId("nav-categories"));
+      fireEvent.click(within(document.querySelector(`[data-env-id="${catId}"]`)).getByText("Fill"));
+    };
+
+    test("warns before driving unallocated negative, and does nothing if declined", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 40,
+        categories: [envelope("c-a", "Rent", 0, 100)],
+      });
+      await settle();
+      clickFill("c-a");
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent(/[Uu]nallocated/);
+      fireEvent.click(within(dialog).getByText("Cancel"));
+      await settle();
+      expect(onSave).not.toHaveBeenCalled();
+    });
+
+    test("proceeds when confirmed, conserving the household total", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 40,
+        categories: [envelope("c-a", "Rent", 0, 100)],
+      });
+      await settle();
+      clickFill("c-a");
+
+      const dialog = await screen.findByRole("alertdialog");
+      fireEvent.click(within(dialog).getByTestId("confirm-ok"));
+      await settle();
+
+      const saved = lastSave(onSave);
+      expect(balanceOf(saved, "c-a")).toBe(100);
+      expect(saved.unallocatedBalance).toBe(-60);
+      expect(householdTotal(saved)).toBe(40); // unchanged
+    });
+
+    test("a fill that the unallocated balance covers asks nothing", async () => {
+      const onSave = renderWith({
+        unallocatedBalance: 500,
+        categories: [envelope("c-a", "Rent", 0, 100)],
+      });
+      await settle();
+      clickFill("c-a");
+      await settle();
+
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      const saved = lastSave(onSave);
+      expect(balanceOf(saved, "c-a")).toBe(100);
+      expect(saved.unallocatedBalance).toBe(400);
+      expect(householdTotal(saved)).toBe(500);
+    });
+  });
+});

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE, DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
 import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
+import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
 import { useIsMobile } from "./hooks/useIsMobile.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -187,75 +188,37 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
 
   const persist = (patch) => onSave?.({ transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, ...patch });
 
-  // Apply or reverse a transaction's effect on envelope balances + unallocated.
-  // Income transactions may carry an `allocations` array ([{catId, amount}])
-  // recording money that went straight into envelopes — applying and
-  // reversing both honour it, so edits and deletes keep balances correct.
-  const applyTxEffect = (tx, factor, cats, unalloc) => {
-    let newCats = cats;
-    let newUnalloc = unalloc;
-    if (tx.type === "expense") {
-      newCats = cats.map((c) => c.id === tx.categoryId ? { ...c, envelopeBalance: (c.envelopeBalance || 0) - factor * tx.amount } : c);
-    } else if (tx.type === "income") {
-      newUnalloc = unalloc + factor * tx.amount;
-      for (const alloc of tx.allocations || []) {
-        newCats = newCats.map((c) => c.id === alloc.catId ? { ...c, envelopeBalance: (c.envelopeBalance || 0) + factor * alloc.amount } : c);
-        newUnalloc -= factor * alloc.amount;
-      }
-    }
-    return { newCats, newUnalloc };
-  };
+  // The envelope arithmetic itself lives in lib/money.js. This component holds
+  // the state and decides what to ask the user; it does not do the sums.
+  const ledger = () => ({ categories, unallocatedBalance });
 
-  // Build the allocations array for a TxForm income transaction
-  const allocationsFromForm = (tx, availableUnalloc) => {
-    if (tx.type !== "income" || !tx.allocatedEnvelopeId) return [];
-    const allocAmt = Math.min(tx.amount, Math.max(0, availableUnalloc + tx.amount));
-    return allocAmt > 0 ? [{ catId: tx.allocatedEnvelopeId, amount: allocAmt }] : [];
+  const commitLedger = ({ categories: newCats, unallocatedBalance: newUnalloc }, patch = {}) => {
+    setCategories(newCats);
+    setUnallocatedBalance(newUnalloc);
+    persist({ categories: newCats, unallocatedBalance: newUnalloc, ...patch });
   };
 
   const saveTx = (tx) => {
-    let newTx;
-    let newCats = [...categories];
-    let newUnalloc = unallocatedBalance;
-
-    if (tx.id) {
-      const old = transactions.find((t) => t.id === tx.id);
-      if (old) { const r = applyTxEffect(old, -1, newCats, newUnalloc); newCats = r.newCats; newUnalloc = r.newUnalloc; }
-      const updated = { ...old, ...tx, allocations: allocationsFromForm(tx, newUnalloc) };
-      const r2 = applyTxEffect(updated, 1, newCats, newUnalloc); newCats = r2.newCats; newUnalloc = r2.newUnalloc;
-      newTx = transactions.map((t) => (t.id === tx.id ? updated : t));
-      showToast("Transaction updated");
-    } else {
-      const created = {
-        ...tx,
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        isRecurring: false,
-        recurringId: null,
-        allocations: allocationsFromForm(tx, unallocatedBalance),
-      };
-      const r = applyTxEffect(created, 1, newCats, newUnalloc); newCats = r.newCats; newUnalloc = r.newUnalloc;
-      newTx = [created, ...transactions];
-      showToast("Transaction added");
-    }
+    const isEdit = !!tx.id;
+    const old = isEdit ? transactions.find((t) => t.id === tx.id) || null : null;
+    const form = isEdit ? tx : { ...tx, id: uid(), createdAt: new Date().toISOString(), isRecurring: false, recurringId: null };
+    const { ledger: next, transaction } = saveTransactionEffect(ledger(), old, form);
+    const newTx = isEdit
+      ? transactions.map((t) => (t.id === tx.id ? transaction : t))
+      : [transaction, ...transactions];
     setTransactions(newTx);
-    setCategories(newCats);
-    setUnallocatedBalance(newUnalloc);
-    persist({ transactions: newTx, categories: newCats, unallocatedBalance: newUnalloc });
+    commitLedger(next, { transactions: newTx });
+    showToast(isEdit ? "Transaction updated" : "Transaction added");
     setEditingTx(null);
     setTxFormOpen(false);
   };
 
   const deleteTx = (id) => {
     const tx = transactions.find((t) => t.id === id);
-    let newCats = [...categories];
-    let newUnalloc = unallocatedBalance;
-    if (tx) { const r = applyTxEffect(tx, -1, newCats, newUnalloc); newCats = r.newCats; newUnalloc = r.newUnalloc; }
+    const next = tx ? applyTxEffect(ledger(), tx, -1) : ledger();
     const newTx = transactions.filter((t) => t.id !== id);
     setTransactions(newTx);
-    setCategories(newCats);
-    setUnallocatedBalance(newUnalloc);
-    persist({ transactions: newTx, categories: newCats, unallocatedBalance: newUnalloc });
+    commitLedger(next, { transactions: newTx });
     showToast("Transaction deleted");
   };
 
@@ -303,12 +266,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       createdAt: new Date().toISOString(),
     };
 
-    const r = applyTxEffect(tx, 1, newCats, unallocatedBalance);
+    const next = applyTxEffect({ categories: newCats, unallocatedBalance }, tx, 1);
     const newTx = [tx, ...transactions];
     setTransactions(newTx);
-    setCategories(r.newCats);
-    setUnallocatedBalance(r.newUnalloc);
-    persist({ transactions: newTx, categories: r.newCats, unallocatedBalance: r.newUnalloc });
+    commitLedger(next, { transactions: newTx });
 
     const allocated = allocations.reduce((s, a) => s + a.amount, 0);
     if (allocationMode === "fill") showToast(`${fmtAUD(amount)} logged · ${fmtAUD(allocated)} into envelopes`);
@@ -316,18 +277,24 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     else showToast(`${fmtAUD(amount)} added to Unallocated`);
   };
 
-  // Envelope actions — move money from unallocated into envelopes
-  const fillEnvelope = (catId) => {
-    const cat = categories.find((c) => c.id === catId);
-    const base = cat?.baseAmount || 0;
+  // Envelope actions — move money from unallocated into envelopes.
+  // A fill that outruns the unallocated balance is confirmed first, the same way
+  // the fill-everything path below does it: the money is not there, and pushing
+  // unallocated negative without saying so is how a household ends up budgeting
+  // against money it does not have.
+  const fillEnvelope = async (catId) => {
+    const { cat, base, amount, shortfall } = envelopeFillPlan(ledger(), catId);
     if (!cat || base <= 0) { showToast("Set a base amount first"); return; }
-    const currentBalance = cat.envelopeBalance || 0;
-    const amount = cat.isAccumulating ? base : Math.max(0, base - currentBalance);
     if (amount <= 0) { showToast(`${cat.name} is already full`); return; }
-    const newCats = categories.map((c) => c.id === catId ? { ...c, envelopeBalance: currentBalance + amount } : c);
-    const newUnalloc = unallocatedBalance - amount;
-    setCategories(newCats); setUnallocatedBalance(newUnalloc);
-    persist({ categories: newCats, unallocatedBalance: newUnalloc });
+    if (shortfall > 0.01) {
+      const ok = await askConfirm({
+        title: "Top up from Unallocated?",
+        message: `Filling ${cat.name} needs ${fmtAUD(amount)} but only ${fmtAUD(unallocatedBalance)} is unallocated. This will leave Unallocated at ${fmtAUD(unallocatedBalance - amount)}.`,
+        confirmLabel: "Fill envelope",
+      });
+      if (!ok) return;
+    }
+    commitLedger(applyEnvelopeFill(ledger(), catId, amount));
     showToast(`Filled ${cat.name} with ${fmtAUD(amount)}`);
   };
 
@@ -369,15 +336,15 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       if (!ok) return;
     }
 
-    let newCats = [...categories];
-    let newUnalloc = unallocatedBalance;
+    let next = ledger();
     const newIncomeTxs = [];
     validSources.forEach(({ catId, amount }) => {
       const incomeTx = { id: uid(), date: todayISO(), amount, type: "income", categoryId: catId, description: "Income fill", isRecurring: false, recurringId: null, allocations: [], addedBy: activeUserId, createdAt: new Date().toISOString() };
       newIncomeTxs.push(incomeTx);
-      const r = applyTxEffect(incomeTx, 1, newCats, newUnalloc);
-      newCats = r.newCats; newUnalloc = r.newUnalloc;
+      next = applyTxEffect(next, incomeTx, 1);
     });
+    let newCats = next.categories;
+    let newUnalloc = next.unallocatedBalance;
 
     // Hard reset: non-savings → set balance to exactly base; savings → add base
     const fillMap = {};
@@ -389,8 +356,8 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     newUnalloc = newUnalloc - Object.values(fillMap).reduce((s, a) => s + a, 0);
 
     const newTx = [...newIncomeTxs, ...transactions];
-    setTransactions(newTx); setCategories(newCats); setUnallocatedBalance(newUnalloc);
-    persist({ transactions: newTx, categories: newCats, unallocatedBalance: newUnalloc });
+    setTransactions(newTx);
+    commitLedger({ categories: newCats, unallocatedBalance: newUnalloc }, { transactions: newTx });
     showToast(`${fmtAUD(totalIncome)} income logged · envelopes filled`);
   };
 
@@ -517,34 +484,40 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     const txCount = transactions.filter((t) => t.categoryId === id).length;
     const ruleCount = recurring.filter((r) => r.categoryId === id).length;
     const total = txCount + ruleCount;
+
+    // Deleting an envelope does not delete the money in it. Say where it goes
+    // before the user commits — including when the envelope is overdrawn, where
+    // "returning" the balance means unallocated absorbs the shortfall.
+    const balance = cat.envelopeBalance || 0;
+    const moneyNote = balance > 0.005
+      ? `\n\nThe ${fmtAUD(balance)} in this envelope will be returned to Unallocated.`
+      : balance < -0.005
+        ? `\n\nThis envelope is overdrawn by ${fmtAUD(-balance)}. That shortfall comes out of Unallocated, taking it to ${fmtAUD(unallocatedBalance + balance)}.`
+        : "";
+
+    const confirmed = await askConfirm({
+      title: `Delete "${cat.name}"?`,
+      message: total > 0
+        ? `${total} item(s) reference this envelope (${txCount} transaction(s), ${ruleCount} recurring rule(s)). They will be reassigned to "Household Incidentals".${moneyNote}`
+        : `This cannot be undone.${moneyNote}`,
+      confirmLabel: total > 0 ? "Delete & reassign" : "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
+
     if (total > 0) {
-      const confirmed = await askConfirm({
-        title: `Delete "${cat.name}"?`,
-        message: `${total} item(s) reference this envelope (${txCount} transaction(s), ${ruleCount} recurring rule(s)). They will be reassigned to "Household Incidentals".`,
-        confirmLabel: "Delete & reassign",
-        danger: true,
-      });
-      if (!confirmed) return;
       // Ensure Incidentals exists in categories
       const hasIncidentals = categories.some((c) => c.id === INCIDENTALS_CAT.id);
       const catsWithIncidentals = hasIncidentals ? categories : [...categories, INCIDENTALS_CAT];
       const newTx = transactions.map((t) => t.categoryId === id ? { ...t, categoryId: INCIDENTALS_CAT.id } : t);
       const newRecurring = recurring.map((r) => r.categoryId === id ? { ...r, categoryId: INCIDENTALS_CAT.id } : r);
-      const newCats = catsWithIncidentals.filter((c) => c.id !== id);
-      setTransactions(newTx); setRecurring(newRecurring); setCategories(newCats);
-      persist({ transactions: newTx, recurring: newRecurring, categories: newCats });
+      const { ledger: next } = removeEnvelope({ categories: catsWithIncidentals, unallocatedBalance }, id);
+      setTransactions(newTx); setRecurring(newRecurring);
+      commitLedger(next, { transactions: newTx, recurring: newRecurring });
       showToast(`Deleted "${cat.name}" · ${total} item(s) moved to Incidentals`);
     } else {
-      const confirmed = await askConfirm({
-        title: `Delete "${cat.name}"?`,
-        message: "This cannot be undone.",
-        confirmLabel: "Delete",
-        danger: true,
-      });
-      if (!confirmed) return;
-      const newCats = categories.filter((c) => c.id !== id);
-      setCategories(newCats);
-      persist({ categories: newCats });
+      const { ledger: next } = removeEnvelope(ledger(), id);
+      commitLedger(next);
       showToast("Category deleted");
     }
   };
@@ -614,11 +587,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       const dueDay = r.dueDay || dayOfMonth(r.nextDueDate);
       return { ...r, dueDay, nextDueDate: addPeriod(r.nextDueDate, r.frequency, dueDay) };
     });
-    let newCats = [...categories];
-    let newUnalloc = unallocatedBalance;
-    newPosted.forEach((tx) => { const r = applyTxEffect(tx, 1, newCats, newUnalloc); newCats = r.newCats; newUnalloc = r.newUnalloc; });
-    setTransactions(newTx); setRecurring(newRecurring); setCategories(newCats); setUnallocatedBalance(newUnalloc);
-    persist({ transactions: newTx, recurring: newRecurring, categories: newCats, unallocatedBalance: newUnalloc });
+    const next = newPosted.reduce((acc, tx) => applyTxEffect(acc, tx, 1), ledger());
+    setTransactions(newTx); setRecurring(newRecurring);
+    commitLedger(next, { transactions: newTx, recurring: newRecurring });
     showToast(`Posted ${due.length} recurring transaction(s)`);
   };
 
@@ -656,12 +627,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
         }))
         .filter((t) => t.amount > 0 && !existing.has(t.id));
       if (valid.length === 0) { showToast("No new transactions found in the pasted data"); return false; }
-      let newCats = [...categories];
-      let newUnalloc = unallocatedBalance;
-      valid.forEach((tx) => { const r = applyTxEffect(tx, 1, newCats, newUnalloc); newCats = r.newCats; newUnalloc = r.newUnalloc; });
+      const next = valid.reduce((acc, tx) => applyTxEffect(acc, tx, 1), ledger());
       const newTx = [...valid, ...transactions];
-      setTransactions(newTx); setCategories(newCats); setUnallocatedBalance(newUnalloc);
-      persist({ transactions: newTx, categories: newCats, unallocatedBalance: newUnalloc });
+      setTransactions(newTx);
+      commitLedger(next, { transactions: newTx });
       showToast(`Imported ${valid.length} transaction${valid.length !== 1 ? "s" : ""}`);
       return true;
     } catch (e) {

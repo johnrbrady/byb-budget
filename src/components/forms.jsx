@@ -4,20 +4,40 @@ import { fmtAUD, todayISO } from "../lib/utils.js";
 
 export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, styles, defaultCategoryId, defaultType }) {
   const defaultCat = defaultCategoryId ? categories.find((c) => c.id === defaultCategoryId) : null;
+  // `allocations` records where an income transaction's money actually went and
+  // is the only thing the balance arithmetic reads, so the "Allocate to
+  // envelope" select is seeded from it. Any `allocatedEnvelopeId` stored on the
+  // transaction is leftover form scaffolding from an older save and is ignored:
+  // income logged through the Add Income flow never has one, so trusting it
+  // opened this form on "— unallocated —" and saving drained the envelope.
+  const existingAllocations = tx?.type === "income" && Array.isArray(tx.allocations) ? tx.allocations : [];
   const [form, setForm] = useState(
-    tx || {
-      date: todayISO(),
-      amount: "",
-      type: defaultCat?.type || defaultType || "expense",
-      categoryId: defaultCategoryId || categories.find((c) => c.type === (defaultType || "expense"))?.id || "",
-      description: "",
-      addedBy: activeUserId,
-      fromCatId: "",
-      toCatId: "",
-      allocatedEnvelopeId: "",
-    }
+    tx
+      ? { ...tx, allocatedEnvelopeId: existingAllocations.length === 1 ? existingAllocations[0].catId : "" }
+      : {
+        date: todayISO(),
+        amount: "",
+        type: defaultCat?.type || defaultType || "expense",
+        categoryId: defaultCategoryId || categories.find((c) => c.type === (defaultType || "expense"))?.id || "",
+        description: "",
+        addedBy: activeUserId,
+        fromCatId: "",
+        toCatId: "",
+        allocatedEnvelopeId: "",
+      }
   );
   const expenseCats = categories.filter((c) => c.type === "expense");
+  // A split across several envelopes cannot be shown in a single select, and
+  // collapsing it into one envelope — or dropping it — would move the household's
+  // money. It is shown read-only and carried through the save untouched; the
+  // Add Income flow is where a split is composed.
+  const splitAllocations = form.type === "income" && Array.isArray(form.allocations) && form.allocations.length > 1
+    ? form.allocations
+    : null;
+  // Editing the amount below the split total is legal but scales the split down,
+  // so warn on the way rather than surprising the user after the save.
+  const splitOverAmount = !!splitAllocations &&
+    splitAllocations.reduce((s, a) => s + a.amount, 0) > (parseFloat(form.amount) || 0) + 0.005;
   const submit = (e) => {
     e.preventDefault();
     const amount = parseFloat(form.amount);
@@ -39,7 +59,7 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
       <div style={mobile ? { gridColumn: "span 2" } : {}}><div style={styles.label}>Date</div><input style={styles.input} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
       <div>
         <div style={styles.label}>Type</div>
-        <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, categoryId: categories.find((c) => c.type === e.target.value)?.id || "", fromCatId: "", toCatId: "", allocatedEnvelopeId: "" })}>
+        <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, categoryId: categories.find((c) => c.type === e.target.value)?.id || "", fromCatId: "", toCatId: "", allocatedEnvelopeId: "", allocations: [] })}>
           <option value="expense">Expense</option>
           <option value="income">Income</option>
           <option value="transfer">Transfer</option>
@@ -74,10 +94,23 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
           {isIncome && (
             <div style={mobile ? { gridColumn: "span 2" } : {}}>
               <div style={styles.label}>Allocate to envelope</div>
-              <select style={styles.input} value={form.allocatedEnvelopeId || ""} onChange={(e) => setForm({ ...form, allocatedEnvelopeId: e.target.value })} data-testid="tx-allocate-envelope">
-                <option value="">— unallocated —</option>
-                {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
-              </select>
+              {splitAllocations ? (
+                <div style={{ ...styles.input, height: "auto", display: "flex", flexDirection: "column", gap: 2, fontSize: 12 }} data-testid="tx-allocate-split">
+                  {splitAllocations.map((a, i) => (
+                    <span key={i}>{categories.find((c) => c.id === a.catId)?.name || "?"} — {fmtAUD(a.amount)}</span>
+                  ))}
+                  <span style={{ color: splitOverAmount ? PALETTE.danger : styles.textMuted, fontSize: 11 }}>
+                    {splitOverAmount
+                      ? `Split exceeds the amount — it will be scaled down to ${fmtAUD(parseFloat(form.amount) || 0)}`
+                      : "Split kept as is · change it in Add Income"}
+                  </span>
+                </div>
+              ) : (
+                <select style={styles.input} value={form.allocatedEnvelopeId || ""} onChange={(e) => setForm({ ...form, allocatedEnvelopeId: e.target.value, allocations: [] })} data-testid="tx-allocate-envelope">
+                  <option value="">— unallocated —</option>
+                  {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+                </select>
+              )}
             </div>
           )}
         </>
