@@ -7,6 +7,7 @@ import {
   applyEnvelopeFill,
   removeEnvelope,
   reconcileLedger,
+  applyOpeningBalances,
 } from "./money.js";
 
 // The rule every one of these functions serves: household money is
@@ -505,5 +506,125 @@ describe("reconcileLedger", () => {
     expect(balanceOf(before, "a")).toBe(80);
     expect(balanceOf(before, "b")).toBe(-30);
     expect(before.unallocatedBalance).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEF-013 — the first-time wizard raised the household total by the sum of
+// every base amount and recorded nothing.
+//
+// This is the one function in the module that is ALLOWED to change the
+// household total without a transaction, because a household adopting the app
+// really does already hold this money. So the invariant it has to serve is a
+// different one, and a stricter one: the total moves by exactly `total`, and
+// `entries` accounts for every cent of that move, envelope by envelope.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("applyOpeningBalances", () => {
+  // The record and the balances have to be the same arithmetic. This checks
+  // both directions: the total explains the household's move, and the entries
+  // explain each envelope's.
+  const expectEntriesExplainLedger = (before, result) => {
+    expect(total(result.ledger) - total(before)).toBeCloseTo(result.total, 10);
+    expect(result.entries.reduce((s, e) => s + e.amount, 0)).toBeCloseTo(result.total, 10);
+    for (const c of before.categories) {
+      const entry = result.entries.find((e) => e.catId === c.id);
+      const moved = balanceOf(result.ledger, c.id) - (c.envelopeBalance || 0);
+      expect(moved).toBeCloseTo(entry ? entry.amount : 0, 10);
+    }
+    // Unallocated takes no part: the money is declared as already sitting in
+    // the envelopes, not as a pile being allocated out of one.
+    expect(result.ledger.unallocatedBalance).toBe(before.unallocatedBalance);
+  };
+
+  test("each envelope is opened at its own amount, and the total is their sum", () => {
+    const before = ledgerOf(0, envelope("a", 0), envelope("b", 0), envelope("c", 0));
+    const result = applyOpeningBalances(before, { a: 500, b: 300, c: 200 });
+
+    expect(result.total).toBe(1000);
+    expect(balanceOf(result.ledger, "a")).toBe(500);
+    expect(balanceOf(result.ledger, "b")).toBe(300);
+    expect(balanceOf(result.ledger, "c")).toBe(200);
+    expectEntriesExplainLedger(before, result);
+  });
+
+  // A total can be right while the money is in the wrong envelope. The entries
+  // are what make that distinguishable, so they are asserted in order and by id.
+  test("the record names which envelope got what, not just how much in all", () => {
+    const before = ledgerOf(0, envelope("a", 0), envelope("b", 0));
+    const result = applyOpeningBalances(before, { a: 500, b: 300 });
+
+    expect(result.entries).toEqual([{ catId: "a", amount: 500 }, { catId: "b", amount: 300 }]);
+  });
+
+  test("an envelope not named in the map is untouched and unrecorded", () => {
+    const before = ledgerOf(0, envelope("a", 0), envelope("b", 0));
+    const result = applyOpeningBalances(before, { a: 500 });
+
+    expect(balanceOf(result.ledger, "b")).toBe(0);
+    expect(result.entries.find((e) => e.catId === "b")).toBeUndefined();
+    expectEntriesExplainLedger(before, result);
+  });
+
+  // A budget of $0 is a real answer in the wizard — most households leave
+  // several envelopes blank. It is not money arriving, so it is not a movement.
+  test("zero and negative amounts move nothing and are left out of the record", () => {
+    const before = ledgerOf(0, envelope("a", 0), envelope("b", 0), envelope("c", 0));
+    const result = applyOpeningBalances(before, { a: 0, b: -50, c: 200 });
+
+    expect(result.total).toBe(200);
+    expect(result.entries).toEqual([{ catId: "c", amount: 200 }]);
+    expect(balanceOf(result.ledger, "b")).toBe(0);
+    expectEntriesExplainLedger(before, result);
+  });
+
+  test("an empty map is a no-op that records nothing", () => {
+    const before = ledgerOf(120, envelope("a", 40));
+    const result = applyOpeningBalances(before, {});
+
+    expect(result.total).toBe(0);
+    expect(result.entries).toEqual([]);
+    expect(total(result.ledger)).toBe(total(before));
+  });
+
+  test("a missing map is treated as an empty one rather than throwing", () => {
+    const before = ledgerOf(0, envelope("a", 0));
+    expect(applyOpeningBalances(before, undefined).total).toBe(0);
+  });
+
+  // Opening balances add to what is there. The wizard only offers itself on a
+  // fresh budget, but the arithmetic must not depend on that.
+  test("an envelope that already holds money is added to, not overwritten", () => {
+    const before = ledgerOf(0, envelope("a", 75));
+    const result = applyOpeningBalances(before, { a: 25 });
+
+    expect(balanceOf(result.ledger, "a")).toBe(100);
+    expect(result.total).toBe(25);
+    expectEntriesExplainLedger(before, result);
+  });
+
+  test("an envelope with no balance field yet is treated as empty", () => {
+    const before = ledgerOf(0, { id: "a", type: "expense" });
+    const result = applyOpeningBalances(before, { a: 60 });
+
+    expect(balanceOf(result.ledger, "a")).toBe(60);
+    expectEntriesExplainLedger(before, result);
+  });
+
+  // Amounts are floats, as everywhere else in this module. The recorded total
+  // is stored unrounded precisely so it stays equal to the move it explains.
+  test("cents still add up to exactly what the household total moved by", () => {
+    const before = ledgerOf(0, envelope("a", 0), envelope("b", 0), envelope("c", 0));
+    const result = applyOpeningBalances(before, { a: 33.33, b: 12.11, c: 0.07 });
+
+    expect(total(result.ledger) - total(before)).toBe(result.total);
+    expectEntriesExplainLedger(before, result);
+  });
+
+  test("the input ledger is not mutated", () => {
+    const before = ledgerOf(10, envelope("a", 40));
+    applyOpeningBalances(before, { a: 500 });
+
+    expect(balanceOf(before, "a")).toBe(40);
+    expect(before.unallocatedBalance).toBe(10);
   });
 });

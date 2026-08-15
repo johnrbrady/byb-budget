@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
 import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
-import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger } from "./lib/money.js";
+import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger, applyOpeningBalances } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
 import { useIsMobile } from "./hooks/useIsMobile.js";
 import { useSwipeNavigation } from "./hooks/useSwipeNavigation.js";
@@ -51,6 +51,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const [assets, setAssets] = useState(initialData?.assets?.length ? initialData.assets : []);
   const [transfers, setTransfers] = useState(initialData?.transfers?.length ? initialData.transfers : []);
   const [reconcileLog, setReconcileLog] = useState(Array.isArray(initialData?.reconcileLog) ? initialData.reconcileLog : []);
+  // Money that entered the budget at first-time setup. A file written before
+  // this existed simply has no key, which reads as "none was ever recorded" —
+  // which is exactly what it means. Nothing migrates.
+  const [openingBalances, setOpeningBalances] = useState(Array.isArray(initialData?.openingBalances) ? initialData.openingBalances : []);
   const [view, setView] = useState("dashboard");
   const [viewAnim, setViewAnim] = useState(""); // "", "left", "right"
   const [theme, setTheme] = useState(() => localStorage.getItem("byb_theme") || "light");
@@ -215,7 +219,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setTimeout(() => setToast(null), 2400);
   };
 
-  const persist = (patch) => onSave?.({ transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, ...patch });
+  const persist = (patch) => onSave?.({ transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, openingBalances, ...patch });
 
   // The envelope arithmetic itself lives in lib/money.js. This component holds
   // the state and decides what to ask the user; it does not do the sums.
@@ -405,16 +409,75 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     showToast(`${fmtAUD(totalIncome)} income logged · envelopes filled`);
   };
 
-  // First-time wizard: bulk set base amounts AND immediately fill envelopes
-  const setupBaseAmounts = (amountsMap) => {
-    const newCats = categories.map((c) =>
+  // First-time wizard: bulk set base amounts, then ask whether the household
+  // already holds that money.
+  //
+  // This used to set `envelopeBalance` to the base amount alongside it, which
+  // raised the household total by the sum of every base amount and recorded
+  // nothing at all — twenty envelopes at $500 invented $10,000 (DEF-013). The
+  // money itself was not the error: a household adopting the app mid-life
+  // genuinely does hold money against these envelopes, sitting in their bank
+  // account. Doing it silently was.
+  //
+  // So the two halves are separated. Setting a budget moves no money and needs
+  // no permission, so base amounts land first and on their own. Opening the
+  // envelopes holding money is a second thing, and it is the user who states
+  // that the money is there — for a total they are shown before they agree to
+  // it. Backing out (Escape, or tapping the ground) leaves the envelopes empty,
+  // so the outcome that raises the household total is the one that needs a
+  // deliberate press.
+  //
+  // What it is recorded as matters as much as that it is recorded. An opening
+  // balance is not earnings, so it is not an income transaction: monthly income
+  // totals, the trend charts and the n8n summary at /api/integrations/summary
+  // all count `type === "income"` rows, and a $10,000 adoption balance landing
+  // in them would misreport the household's first month for good. It goes in a
+  // log of its own instead, the same shape the app already uses for the other
+  // ledger events that are not transactions (`reconcileLog`, `transfers`):
+  // dated, attributed, with the per-envelope breakdown and the total it moved
+  // the household by.
+  const setupBaseAmounts = async (amountsMap) => {
+    const withBases = categories.map((c) =>
       amountsMap[c.id] !== undefined
-        ? { ...c, baseAmount: amountsMap[c.id], monthlyBudget: amountsMap[c.id], envelopeBalance: amountsMap[c.id] }
+        ? { ...c, baseAmount: amountsMap[c.id], monthlyBudget: amountsMap[c.id] }
         : c
     );
-    setCategories(newCats);
-    persist({ categories: newCats });
-    showToast("Envelopes set up and filled! Your balances are ready to go.");
+
+    // Worked out before the question is asked, so the amount the user agrees to
+    // is the amount that actually moves — the same numbers, not a second sum.
+    const opening = applyOpeningBalances({ categories: withBases, unallocatedBalance }, amountsMap);
+
+    const setUpOnly = (msg) => {
+      commitLedger({ categories: withBases, unallocatedBalance });
+      showToast(msg);
+    };
+
+    if (opening.total <= 0) { setUpOnly("Envelopes set up. Add money as it arrives."); return; }
+
+    const fund = await askConfirm({
+      title: "Do you already have this money?",
+      message: `Your envelopes add up to ${fmtAUD(opening.total)}.\n\nIf that money is already in your account, BYB! can open them holding it. It is recorded as an opening balance dated today, so your totals still add up and you can see later where the money came from.\n\nIf it is not there yet, start the envelopes empty and fill them as income arrives.`,
+      confirmLabel: `Yes, open with ${fmtAUD(opening.total)}`,
+      cancelLabel: "Start empty",
+    });
+
+    if (!fund) { setUpOnly("Envelopes set up · balances start empty"); return; }
+
+    // `total` is this entry's account of how much the household total moved, so
+    // it is stored exactly as applied rather than rounded. A rounded copy would
+    // be a record that no longer agrees with the balances it explains.
+    const entry = {
+      id: uid(),
+      date: todayISO(),
+      at: new Date().toISOString(),
+      userId: activeUserId,
+      total: opening.total,
+      entries: opening.entries,
+    };
+    const newOpening = [entry, ...openingBalances];
+    setOpeningBalances(newOpening);
+    commitLedger(opening.ledger, { openingBalances: newOpening });
+    showToast(`Envelopes set up · ${fmtAUD(opening.total)} opening balance recorded`);
   };
 
   // End-of-month reconcile: pool non-savings surpluses, cover deficits,

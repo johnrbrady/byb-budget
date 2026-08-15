@@ -192,7 +192,12 @@ function validateBudgetData(data) {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     return "Data must be a JSON object";
   }
-  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "dataVersion"];
+  // `openingBalances` is the record of money entering the budget at first-time
+  // setup (see setupBaseAmounts in BudgetApp.jsx). It is written from the moment
+  // the client supports it, so it has to be accepted here or every save after
+  // setup would be rejected outright. Files written before it exists simply do
+  // not carry the key.
+  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "openingBalances", "dataVersion"];
   for (const key of Object.keys(data)) {
     if (!allowed.includes(key)) return `Unknown field: ${key}`;
   }
@@ -203,6 +208,7 @@ function validateBudgetData(data) {
   if (data.assets && !Array.isArray(data.assets)) return "assets must be an array";
   if (data.transfers && !Array.isArray(data.transfers)) return "transfers must be an array";
   if (data.reconcileLog && !Array.isArray(data.reconcileLog)) return "reconcileLog must be an array";
+  if (data.openingBalances && !Array.isArray(data.openingBalances)) return "openingBalances must be an array";
   if (data.unallocatedBalance !== undefined && typeof data.unallocatedBalance !== "number") {
     return "unallocatedBalance must be a number";
   }

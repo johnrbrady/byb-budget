@@ -4,6 +4,7 @@ import { fmtAUD } from "../lib/utils.js";
 import { filterTransactions, totals } from "../lib/txQuery.js";
 import { TxForm } from "../components/forms.jsx";
 import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
+import { IncomeSheet } from "../components/IncomeSheet.jsx";
 import { AnimatedCurrency } from "../components/AnimatedNumber.jsx";
 import { QuickActionsSheet } from "../components/QuickActions.jsx";
 import { askConfirm } from "../components/ConfirmDialog.jsx";
@@ -68,6 +69,17 @@ export function Dashboard({
   const spentThisMonth = (catId) =>
     totals(filterTransactions(transactions, { month: activeMonth, categoryId: catId, type: "expense" })).expense;
 
+  // One set of props, two presentations. AddIncomeFlow is where multi-envelope
+  // splits are composed and is not to be duplicated.
+  const incomeFlowProps = {
+    categories,
+    recurring,
+    unallocatedBalance,
+    onSubmit: (payload) => { onAddIncome(payload); setIncomeFlowOpen(false); },
+    onCancel: () => setIncomeFlowOpen(false),
+    styles,
+  };
+
   const handleReconcile = async () => {
     const ok = await askConfirm({
       title: "End-of-month reconcile?",
@@ -104,16 +116,14 @@ export function Dashboard({
         </div>
       </div>
 
-      {/* Unified Add Income flow */}
-      {incomeFlowOpen && (
-        <AddIncomeFlow
-          categories={categories}
-          recurring={recurring}
-          unallocatedBalance={unallocatedBalance}
-          onSubmit={(payload) => { onAddIncome(payload); setIncomeFlowOpen(false); }}
-          onCancel={() => setIncomeFlowOpen(false)}
-          styles={styles}
-        />
+      {/* Unified Add Income flow — inline on desktop, a sheet on a phone.
+          The sheet is rendered at the end of the view rather than here: the
+          "Add income here" quick action is reached by long-pressing an envelope,
+          which on a household with thirty of them is a long way down the page,
+          and an inline panel opening up here would be off the top of the screen
+          (the DEF-016 shape). */}
+      {!mobile && incomeFlowOpen && (
+        <AddIncomeFlow {...incomeFlowProps} />
       )}
 
       {/* Transaction form inline */}
@@ -197,6 +207,11 @@ export function Dashboard({
             },
           ]}
         />
+      )}
+
+      {/* Last in the view's own subtree, so opening it moves nothing above it. */}
+      {mobile && incomeFlowOpen && (
+        <IncomeSheet {...incomeFlowProps} onClose={() => setIncomeFlowOpen(false)} />
       )}
     </div>
   );

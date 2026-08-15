@@ -5,6 +5,7 @@ import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib
 import { TxForm } from "../components/forms.jsx";
 import { TxSheet } from "../components/TxSheet.jsx";
 import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
+import { IncomeSheet } from "../components/IncomeSheet.jsx";
 import { QuickActionsSheet } from "../components/QuickActions.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { askConfirm } from "../components/ConfirmDialog.jsx";
@@ -161,6 +162,18 @@ export function TransactionsView({
     onTransfer: (data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); closeEditor(); },
     onCancel: closeEditor,
     defaultCategoryId: !editingTx ? contextCatId : null,
+    styles,
+  };
+
+  // One set of props, two presentations, exactly as txFormProps above: an inline
+  // panel on desktop, the body of a bottom sheet on a phone. AddIncomeFlow is
+  // where multi-envelope splits are composed and is not to be duplicated.
+  const incomeFlowProps = {
+    categories,
+    recurring,
+    unallocatedBalance,
+    onSubmit: (payload) => { onAddIncome(payload); setIncomeFlowOpen(false); },
+    onCancel: () => setIncomeFlowOpen(false),
     styles,
   };
 
@@ -344,15 +357,11 @@ export function TransactionsView({
         </div>
       )}
 
-      {incomeFlowOpen && (
-        <AddIncomeFlow
-          categories={categories}
-          recurring={recurring}
-          unallocatedBalance={unallocatedBalance}
-          onSubmit={(payload) => { onAddIncome(payload); setIncomeFlowOpen(false); }}
-          onCancel={() => setIncomeFlowOpen(false)}
-          styles={styles}
-        />
+      {/* Desktop keeps the inline panel, the same decision DEC-011 made for the
+          transaction editor. The phone's copy is a sheet, rendered after the
+          list — see below. */}
+      {!mobile && incomeFlowOpen && (
+        <AddIncomeFlow {...incomeFlowProps} />
       )}
 
       {/* Desktop keeps the inline panel: the table is compact, the editor lands
@@ -457,6 +466,9 @@ export function TransactionsView({
               it opens and the sheet cannot push the list down under the finger. */}
           {editorOpen && (
             <TxSheet {...txFormProps} onClose={closeEditor} onDelete={deleteFromEditor} />
+          )}
+          {incomeFlowOpen && (
+            <IncomeSheet {...incomeFlowProps} onClose={() => setIncomeFlowOpen(false)} />
           )}
         </>
       ) : (

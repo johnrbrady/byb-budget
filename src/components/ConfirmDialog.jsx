@@ -48,9 +48,18 @@ export function ConfirmHost({ styles }) {
   const mobile = styles.isMobile;
   const accent = req.danger ? PALETTE.danger : PALETTE.primary;
 
+  // `data-swipe-ignore`, for the same reason Sheet carries it: this ground
+  // covers the screen, and a swipe over a modal must never change the tab
+  // underneath it. Today the guard is belt and braces — ConfirmHost is mounted
+  // beside the swipe surface in BudgetApp rather than inside it, so the gesture
+  // cannot see these touches at all. That is an accident of where the host
+  // happens to sit, though, and it is decided a long way from here; the
+  // attribute is what makes the rule true of the dialog itself, wherever the
+  // host is mounted.
   return (
     <div
       className="byb-overlay"
+      data-swipe-ignore
       style={{ position: "fixed", inset: 0, background: "var(--byb-overlay)", zIndex: 500, display: "flex", alignItems: mobile ? "flex-end" : "center", justifyContent: "center", padding: mobile ? 0 : 16 }}
       onClick={() => close(false)}
     >

@@ -711,3 +711,322 @@ describe("The transaction editor on a desktop", () => {
     expect(form.closest("[style*='position: fixed']")).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The confirm dialog and the tab swipe.
+//
+// Package 7 stopped a swipe over a bottom sheet from changing the tab
+// underneath it, by putting `data-swipe-ignore` on the shared Sheet shell. The
+// confirm dialog was not in scope then, and deleting a transaction from the new
+// sheet goes through it.
+//
+// Worth being precise about what is and is not true here, because it decides
+// what these tests can prove. ConfirmHost is mounted at the app root, beside the
+// swipe surface rather than inside it — see the ancestry assertions below — so
+// the gesture cannot see touches on the dialog at all, and could not before this
+// change either. The behaviour was already right. What was missing was any
+// reason for it to stay right: it rests entirely on where the host happens to be
+// mounted, which is decided in BudgetApp.jsx, nowhere near the dialog. The guard
+// is what makes the rule belong to the dialog itself.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("A swipe over the confirm dialog", () => {
+  beforeEach(() => { global.setMobileViewport(); });
+
+  const spend = (id, date, amount, description) => ({
+    id, date, amount, type: "expense", categoryId: "c-a", description,
+    isRecurring: false, recurringId: null, addedBy: "u-user1", createdAt: `${date}T00:00:00Z`,
+  });
+
+  // Open the delete confirmation the way the stakeholder now reaches it: tap a
+  // row to get the edit sheet, then Delete inside it.
+  const openDeleteConfirm = async () => {
+    renderApp({ transactions: [spend("t-1", "2026-06-10", 25, "Milk")] });
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByTestId("tx-row-t-1"));
+    fireEvent.click(screen.getByTestId("tx-sheet-delete"));
+    const dialog = await screen.findByRole("alertdialog");
+    return { dialog, overlay: dialog.parentElement };
+  };
+
+  test("the dialog's ground carries the same swipe guard a sheet's does", async () => {
+    const { overlay } = await openDeleteConfirm();
+    expect(overlay).toHaveAttribute("data-swipe-ignore");
+    // The same guard, on the same kind of element, as the sheet it was opened
+    // from — so the two cannot drift apart.
+    expect(screen.getByTestId("tx-edit-sheet")).toHaveAttribute("data-swipe-ignore");
+  });
+
+  test("a swipe over it does not change the tab underneath", async () => {
+    const { dialog } = await openDeleteConfirm();
+    const track = document.querySelector(".byb-swipe-track");
+    const surface = document.querySelector("[data-swipe-surface]");
+
+    // Why it holds, asserted rather than assumed: the dialog is not in the
+    // gesture's subtree, while the sheet it was opened from is.
+    expect(surface.contains(dialog)).toBe(false);
+    expect(surface.contains(screen.getByTestId("tx-edit-sheet"))).toBe(true);
+
+    for (const target of [dialog.parentElement, dialog, screen.getByTestId("confirm-ok")]) {
+      drag(target);
+      // Synchronous: a committed swipe writes the transform during touchmove,
+      // long before it navigates. If the shell had taken the gesture this would
+      // already be set, timer or no timer.
+      expect(track.style.transform).toBe("");
+    }
+    // And still nothing once every settle timer would have run out.
+    await pastSettle();
+    expect(currentView()).toBe("transactions");
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  // The control for the test above: "nothing moved" only means something if this
+  // harness can see movement in the first place. The identical drag, on a target
+  // inside the gesture's subtree, moves the view immediately.
+  test("CONTROL: the same drag on the list does move the view, at once", async () => {
+    renderApp({ transactions: [spend("t-1", "2026-06-10", 25, "Milk")] });
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+
+    const track = document.querySelector(".byb-swipe-track");
+    drag(screen.getByTestId("tx-table"));
+    expect(track.style.transform).not.toBe("");
+    await waitFor(() => expect(currentView()).toBe("categories"));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEF-016, the other half — "Add income" still opened an off-screen form.
+//
+// Package 7 moved the transaction editor into a sheet and left the income path
+// inline. Reached from the FAB's long-press menu part-way down months of
+// history, or from an envelope's quick actions part-way down a list of thirty,
+// the flow opened above the user and read as having done nothing — the same
+// defect, on the path a household uses every payday.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Adding income on a phone", () => {
+  beforeEach(() => { global.setMobileViewport(); });
+
+  const spend = (id, date, amount, description) => ({
+    id, date, amount, type: "expense", categoryId: "c-a", description,
+    isRecurring: false, recurringId: null, addedBy: "u-user1", createdAt: `${date}T00:00:00Z`,
+  });
+
+  const history = [
+    spend("t-jun-1", "2026-06-14", 60, "June shop"),
+    spend("t-jun-2", "2026-06-08", 22, "Bakery"),
+    spend("t-may-1", "2026-05-20", 55, "May shop"),
+    spend("t-apr-1", "2026-04-18", 47, "April shop"),
+  ];
+
+  const incomeCat = { id: "c-inc", name: "Salary", type: "income", colour: "#7FB069", monthlyBudget: null };
+
+  const withIncome = (extra = {}) => renderApp({
+    transactions: history,
+    categories: [incomeCat, env("c-a", "Alpha"), env("c-b", "Bravo")],
+    ...extra,
+  });
+
+  // Where the list sits among its siblings. A panel inserted into the flow above
+  // the list pushes it down — which is the defect, seen structurally.
+  const listIndex = () => {
+    const list = screen.getByTestId("tx-table");
+    return Array.prototype.indexOf.call(list.parentElement.children, list);
+  };
+
+  test("the FAB's long-press menu opens income over the list, not above it", async () => {
+    jest.useFakeTimers({ now: new Date("2026-06-15T09:00:00Z") });
+    try {
+      withIncome();
+      await act(async () => { await Promise.resolve(); });
+      // Drill into the envelope, so the list holds months of history rather than
+      // one month — which is where the stakeholder was when it looked broken.
+      fireEvent.click(screen.getByText("Alpha"));
+
+      const before = listIndex();
+      const fab = screen.getByTestId("add-tx");
+      fireEvent.touchStart(fab, { touches: [{ clientX: 300, clientY: 700 }] });
+      act(() => { jest.advanceTimersByTime(600); });
+      fireEvent.click(screen.getByText("Add income"));
+
+      const sheet = screen.getByTestId("income-sheet");
+      expect(sheet).toBeInTheDocument();
+      // Fixed to the viewport, so it is over the list wherever the list is
+      // scrolled to…
+      expect(sheet.style.position).toBe("fixed");
+      // …and the list has not been pushed down to make room for it.
+      expect(listIndex()).toBe(before);
+      // The flow comes after the rows in the document, not above the whole list.
+      const flow = screen.getByTestId("add-income-flow");
+      const row = screen.getByTestId("tx-row-t-apr-1");
+      expect(flow.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("the + Income button opens the same sheet", async () => {
+    withIncome();
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+
+    const before = listIndex();
+    fireEvent.click(screen.getByText("+ Income"));
+
+    expect(screen.getByTestId("income-sheet")).toBeInTheDocument();
+    expect(listIndex()).toBe(before);
+  });
+
+  test("it is the app's own sheet, not a second one", async () => {
+    withIncome();
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByText("+ Income"));
+
+    // byb-overlay/byb-sheet are what carry the entrance animation in global.css,
+    // and therefore what the prefers-reduced-motion rule there already reaches.
+    // (jsdom loads no CSS, so the class is the only part of that this can assert.)
+    const sheet = screen.getByTestId("income-sheet");
+    expect(sheet.className).toContain("byb-overlay");
+    expect(sheet.querySelector(".byb-sheet")).not.toBeNull();
+    expect(sheet).toHaveAttribute("data-swipe-ignore");
+  });
+
+  test("a swipe over the open income sheet does not change tab underneath it", async () => {
+    withIncome();
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByText("+ Income"));
+
+    const track = document.querySelector(".byb-swipe-track");
+    const sheet = screen.getByTestId("income-sheet");
+    // This one IS inside the gesture's subtree, unlike the confirm dialog — the
+    // guard is the only thing stopping it, so the assertion has teeth.
+    expect(document.querySelector("[data-swipe-surface]").contains(sheet)).toBe(true);
+
+    drag(sheet);
+    expect(track.style.transform).toBe("");
+    await pastSettle();
+    expect(currentView()).toBe("transactions");
+    expect(screen.getByTestId("income-sheet")).toBeInTheDocument();
+  });
+
+  test("tapping the ground closes it and the list has not moved", async () => {
+    withIncome();
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+
+    const before = listIndex();
+    fireEvent.click(screen.getByText("+ Income"));
+    fireEvent.click(screen.getByTestId("income-sheet"));
+
+    expect(screen.queryByTestId("income-sheet")).not.toBeInTheDocument();
+    expect(listIndex()).toBe(before);
+  });
+
+  test("the Dashboard's envelope quick action opens the sheet too", async () => {
+    jest.useFakeTimers({ now: new Date("2026-06-15T09:00:00Z") });
+    try {
+      withIncome();
+      await act(async () => { await Promise.resolve(); });
+
+      // Long-press an envelope row on the Dashboard, then "Add income here".
+      const row = screen.getByText("Alpha");
+      fireEvent.touchStart(row, { touches: [{ clientX: 200, clientY: 400 }] });
+      act(() => { jest.advanceTimersByTime(600); });
+      fireEvent.click(screen.getByText("Add income here"));
+
+      const sheet = screen.getByTestId("income-sheet");
+      expect(sheet).toBeInTheDocument();
+      expect(sheet.style.position).toBe("fixed");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // ── The Package 3 guard, on the path this package adds ─────────────────────
+  //
+  // AddIncomeFlow is where a multi-envelope split is composed, and those splits
+  // are what the DEF-004 rules carry through a later edit untouched. Rendering
+  // it in a sheet must not change a cent of that.
+  test("a split composed in the sheet lands in the right envelopes and is stored", async () => {
+    const onSave = jest.fn();
+    render(
+      <BudgetApp
+        onSave={onSave}
+        initialData={{
+          users: baseUsers, transactions: [], recurring: [], assets: [], transfers: [],
+          reconcileLog: [], unallocatedBalance: 0,
+          categories: [
+            incomeCat,
+            env("c-a", "Alpha", { envelopeBalance: 0 }),
+            env("c-b", "Bravo", { envelopeBalance: 0 }),
+          ],
+        }}
+      />
+    );
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByText("+ Income"));
+
+    const flow = screen.getByTestId("add-income-flow");
+    fireEvent.change(within(flow).getByTestId("income-amount"), { target: { value: "500" } });
+    fireEvent.click(within(flow).getByTestId("alloc-split"));
+
+    // The split rows are the only selects in the flow; their amount fields share
+    // a placeholder with the transaction amount above, so that one is excluded.
+    const selects = () => Array.from(flow.querySelectorAll("select"));
+    const splitAmounts = () => Array.from(flow.querySelectorAll('input[placeholder="0.00"]'))
+      .filter((el) => el.getAttribute("data-testid") !== "income-amount");
+    fireEvent.change(selects()[0], { target: { value: "c-a" } });
+    fireEvent.change(splitAmounts()[0], { target: { value: "300" } });
+    fireEvent.click(within(flow).getByText("Add another envelope"));
+    fireEvent.change(selects()[1], { target: { value: "c-b" } });
+    fireEvent.change(splitAmounts()[1], { target: { value: "200" } });
+    fireEvent.click(within(flow).getByTestId("income-submit"));
+    await settle();
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    const tx = saved.transactions[0];
+    expect(tx.type).toBe("income");
+    expect(tx.amount).toBe(500);
+    expect(tx.allocations).toEqual([{ catId: "c-a", amount: 300 }, { catId: "c-b", amount: 200 }]);
+    expect(saved.categories.find((c) => c.id === "c-a").envelopeBalance).toBe(300);
+    expect(saved.categories.find((c) => c.id === "c-b").envelopeBalance).toBe(200);
+    // The money split between the envelopes; none was created and none stranded.
+    expect(saved.unallocatedBalance).toBe(0);
+    // And the sheet closed on submit.
+    expect(screen.queryByTestId("income-sheet")).not.toBeInTheDocument();
+  });
+});
+
+// The other half of DEC-011, for income: a phone gets the sheet, a desktop keeps
+// the inline panel it already had.
+describe("Adding income on a desktop", () => {
+  const desktopCats = [
+    { id: "c-inc", name: "Salary", type: "income", colour: "#7FB069", monthlyBudget: null },
+    env("c-a", "Alpha"),
+  ];
+
+  test("the Add Income button still opens the inline panel, with no sheet involved", async () => {
+    renderApp({ categories: desktopCats });
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByTestId("add-income-btn-tx"));
+
+    const flow = screen.getByTestId("add-income-flow");
+    expect(flow).toBeInTheDocument();
+    expect(screen.queryByTestId("income-sheet")).not.toBeInTheDocument();
+    // In the page, above the table — which is where a desktop reader is looking.
+    expect(flow.closest("[style*='position: fixed']")).toBeNull();
+  });
+
+  test("the Dashboard's Add Income button is inline too", async () => {
+    renderApp({ categories: desktopCats });
+    await settle();
+    fireEvent.click(screen.getByTestId("add-income-btn"));
+
+    expect(screen.getByTestId("add-income-flow")).toBeInTheDocument();
+    expect(screen.queryByTestId("income-sheet")).not.toBeInTheDocument();
+  });
+});

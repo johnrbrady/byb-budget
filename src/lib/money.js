@@ -134,6 +134,44 @@ export function applyEnvelopeFill({ categories, unallocatedBalance }, catId, amo
 }
 
 /**
+ * Open envelopes at a stated balance — the one place money legitimately enters
+ * the system without a transaction behind it.
+ *
+ * A household adopting this app mid-life already holds money against these
+ * envelopes; it is sitting in their bank account. So setup genuinely raises the
+ * household total, and no arithmetic can make that untrue. What the arithmetic
+ * can do is make it accountable: `entries` is the record of exactly which
+ * envelope received what, `total` is what the household total therefore moved
+ * by, and both come out of the same single pass as the ledger they describe —
+ * so, as with `reconcileLedger`'s movements, the record and the balances cannot
+ * disagree. `unallocatedBalance` is passed through untouched: the money is being
+ * declared as already sitting in the envelopes, not as a pile being allocated.
+ *
+ * Nothing is rounded. `total` is the number the caller stores as its account of
+ * the household total's change, so it has to be that change and not a
+ * near-enough copy of it.
+ *
+ * Envelopes named with a zero or negative amount take no part. An opening
+ * balance is a statement of money held, and "none" is not a movement worth
+ * recording — it would put rows in the log that say nothing.
+ */
+export function applyOpeningBalances({ categories, unallocatedBalance }, amountsMap) {
+  const amounts = amountsMap || {};
+  const entries = [];
+  const next = (categories || []).map((c) => {
+    const amount = amounts[c.id];
+    if (typeof amount !== "number" || !(amount > 0)) return c;
+    entries.push({ catId: c.id, amount });
+    return { ...c, envelopeBalance: balanceOf(c) + amount };
+  });
+  return {
+    ledger: { categories: next, unallocatedBalance },
+    entries,
+    total: entries.reduce((s, e) => s + e.amount, 0),
+  };
+}
+
+/**
  * End-of-month reconcile: pool every non-savings surplus, cover the deficits
  * most-overdrawn first, and hand whatever is left back to unallocated.
  *

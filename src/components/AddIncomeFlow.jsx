@@ -11,8 +11,13 @@ import { IconPlus, IconCheck, IconZap, IconWallet, IconEnvelope } from "./Icons.
 //
 // Calls onSubmit({ sourceId, newSourceName, amount, date, description,
 //                  allocationMode: "unallocated"|"fill"|"split", splits })
+//
+// `style` overrides this form's own container styling only, exactly as TxForm's
+// does — it is there so the same flow can be a card in the page or the body of a
+// bottom sheet without a second copy of it existing. Nothing below it reads
+// `style`; the allocation logic it composes (DEF-004) is untouched by it.
 
-export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSubmit, onCancel, styles }) {
+export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSubmit, onCancel, styles, style }) {
   const mobile = styles.isMobile;
   const incomeCats = categories.filter((c) => c.type === "income");
   const expenseCats = categories.filter((c) => c.type === "expense");
@@ -84,7 +89,7 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
 
   return (
     <form className="byb-panel" onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
-      style={{ ...styles.card, marginBottom: 16, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)" }}
+      style={{ ...styles.card, marginBottom: 16, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)", ...style }}
       data-testid="add-income-flow">
       <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
         <IconWallet size={18} /> Add income
