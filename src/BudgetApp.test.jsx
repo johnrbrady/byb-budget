@@ -191,6 +191,101 @@ describe("Reconcile", () => {
   });
 });
 
+describe("Melbourne dates", () => {
+  // 2026-08-31T22:00:00Z is 8:00am AEST on Tuesday 1 September 2026. Dating the
+  // transaction from the UTC clock filed it into August, where it dropped out of
+  // the September list the app was showing.
+  test("a transaction entered at 8am on the 1st is dated the 1st", async () => {
+    jest.setSystemTime(new Date("2026-08-31T22:00:00Z"));
+    const onSave = jest.fn();
+    render(
+      <BudgetApp
+        initialData={{ users: baseUsers, transactions: [], categories: [], recurring: [], assets: [], transfers: [], reconcileLog: [], unallocatedBalance: 0 }}
+        onSave={onSave}
+      />
+    );
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-transactions"));
+    fireEvent.click(screen.getByTestId("add-tx"));
+
+    const form = screen.getByTestId("tx-form");
+    fireEvent.change(within(form).getByTestId("tx-amount"), { target: { value: "50" } });
+    fireEvent.change(within(form).getByTestId("tx-description"), { target: { value: "Grocery shop" } });
+    fireEvent.click(screen.getByTestId("tx-save"));
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    const tx = saved.transactions.find((t) => t.description === "Grocery shop");
+    expect(tx.date).toBe("2026-09-01");
+    // ...and it is still on screen, because the month being viewed is September too.
+    expect(screen.getByText("Grocery shop")).toBeInTheDocument();
+  });
+});
+
+describe("Recurring rules across a short month", () => {
+  const groceries = { id: "c-groceries", name: "Groceries", type: "expense", colour: "#7FB069", baseAmount: 100, envelopeBalance: 500, isAccumulating: false };
+
+  function renderWithRule(rule) {
+    const onSave = jest.fn();
+    render(
+      <BudgetApp
+        initialData={{ users: baseUsers, transactions: [], categories: [groceries], recurring: [rule], assets: [], transfers: [], reconcileLog: [], unallocatedBalance: 0 }}
+        onSave={onSave}
+      />
+    );
+    return onSave;
+  }
+
+  // The old addPeriod overflowed 31 January into 3 March, skipping February
+  // altogether and then firing on the 3rd of every month thereafter.
+  test("a rule due on the 31st advances to the last day of February", async () => {
+    jest.setSystemTime(new Date("2026-02-15T00:00:00Z"));
+    const onSave = renderWithRule({
+      id: "r1", label: "Mortgage", amount: 1000, type: "expense", categoryId: "c-groceries",
+      frequency: "monthly", startDate: "2026-01-31", nextDueDate: "2026-01-31", addedBy: "u-user1",
+    });
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-recurring"));
+    fireEvent.click(screen.getByTestId("post-due"));
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    expect(saved.recurring[0].nextDueDate).toBe("2026-02-28");
+    // The intended day is remembered so the next cycle can return to it.
+    expect(saved.recurring[0].dueDay).toBe(31);
+    // The posted transaction keeps the date the rule was actually due on.
+    expect(saved.transactions[0].date).toBe("2026-01-31");
+  });
+
+  test("the rule returns to the 31st the month after February", async () => {
+    jest.setSystemTime(new Date("2026-03-15T00:00:00Z"));
+    const onSave = renderWithRule({
+      id: "r1", label: "Mortgage", amount: 1000, type: "expense", categoryId: "c-groceries",
+      frequency: "monthly", startDate: "2026-01-31", nextDueDate: "2026-02-28", dueDay: 31, addedBy: "u-user1",
+    });
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-recurring"));
+    fireEvent.click(screen.getByTestId("post-due"));
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    expect(saved.recurring[0].nextDueDate).toBe("2026-03-31");
+  });
+
+  // Rules saved before the anchor existed pick it up from wherever they are.
+  test("a legacy rule with no anchor backfills one when it is posted", async () => {
+    jest.setSystemTime(new Date("2026-02-15T00:00:00Z"));
+    const onSave = renderWithRule({
+      id: "r1", label: "Rent", amount: 500, type: "expense", categoryId: "c-groceries",
+      frequency: "monthly", startDate: "2026-01-30", nextDueDate: "2026-01-30", addedBy: "u-user1",
+    });
+    await settle();
+    fireEvent.click(screen.getByTestId("nav-recurring"));
+    fireEvent.click(screen.getByTestId("post-due"));
+
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    expect(saved.recurring[0].dueDay).toBe(30);
+    expect(saved.recurring[0].nextDueDate).toBe("2026-02-28");
+  });
+});
+
 describe("Income allocation integrity", () => {
   test("deleting an allocated income reverses both unallocated and the envelope", async () => {
     const onSave = jest.fn();

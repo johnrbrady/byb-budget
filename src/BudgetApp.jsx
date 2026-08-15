@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE, DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
-import { uid, fmtAUD, monthKey, todayISO, addPeriod, genMonthRange } from "./lib/utils.js";
+import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
 import { buildStyles } from "./styles/buildStyles.js";
 import { useIsMobile } from "./hooks/useIsMobile.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -549,7 +549,12 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     }
   };
 
-  const saveRule = (rule) => {
+  const saveRule = (incoming) => {
+    // The form's "Next due" is the user stating which day of the month the rule
+    // falls on, so it is what the monthly cycle anchors to. Recording it here
+    // means a clamp into a short February cannot quietly become the rule's new
+    // day (see addPeriod), and an edited due date replaces a stale anchor.
+    const rule = incoming.nextDueDate ? { ...incoming, dueDay: dayOfMonth(incoming.nextDueDate) } : incoming;
     let newRecurring;
     if (rule.id) {
       newRecurring = recurring.map((r) => (r.id === rule.id ? { ...r, ...rule } : r));
@@ -592,7 +597,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   };
 
   const postDueRecurrences = () => {
-    const due = recurring.filter((r) => r.nextDueDate <= todayISO());
+    // Read the date once so the two passes below cannot straddle midnight.
+    const today = todayISO();
+    const due = recurring.filter((r) => r.nextDueDate <= today);
     if (due.length === 0) return;
     const newPosted = due.map((r) => ({
       id: uid(), date: r.nextDueDate, amount: r.amount, type: r.type,
@@ -600,7 +607,13 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       recurringId: r.id, allocations: [], addedBy: r.addedBy, createdAt: new Date().toISOString(),
     }));
     const newTx = [...newPosted, ...transactions];
-    const newRecurring = recurring.map((r) => r.nextDueDate <= todayISO() ? { ...r, nextDueDate: addPeriod(r.nextDueDate, r.frequency) } : r);
+    const newRecurring = recurring.map((r) => {
+      if (r.nextDueDate > today) return r;
+      // Rules saved before the anchor existed take it from where they are now,
+      // which is the last date the old code got right for them.
+      const dueDay = r.dueDay || dayOfMonth(r.nextDueDate);
+      return { ...r, dueDay, nextDueDate: addPeriod(r.nextDueDate, r.frequency, dueDay) };
+    });
     let newCats = [...categories];
     let newUnalloc = unallocatedBalance;
     newPosted.forEach((tx) => { const r = applyTxEffect(tx, 1, newCats, newUnalloc); newCats = r.newCats; newUnalloc = r.newUnalloc; });

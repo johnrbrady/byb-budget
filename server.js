@@ -21,6 +21,31 @@ const BCRYPT_ROUNDS = parseInt(process.env.BYB_BCRYPT_ROUNDS || "12", 10);
 const API_KEY = process.env.BYB_API_KEY || "";          // read-only summary endpoint for n8n etc.
 const WEBHOOK_URL = process.env.BYB_WEBHOOK_URL || ""; // outbound POST on reconcile events
 
+// ── Melbourne calendar dates ────────────────────────────────────────────────
+// Dates in this app are the household's local calendar dates. This container
+// ships without TZ set, so Node resolves to UTC and a plain toISOString() would
+// report yesterday's date — and yesterday's month, on the 1st — until 10am
+// local (11am in daylight saving). Intl carries the daylight-saving rules, so
+// AEST/AEDT is handled rather than approximated with a fixed offset.
+//
+// This mirrors todayISO() in src/lib/utils.js. It is duplicated rather than
+// imported because the production image copies only server.js and dist/ (see
+// Dockerfile) — src/ is not there to import from. Keep the two in step.
+const MELBOURNE_TZ = "Australia/Melbourne";
+const melbourneDate = new Intl.DateTimeFormat("en-CA", {
+  timeZone: MELBOURNE_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const todayISO = () => melbourneDate.format(new Date());
+// Day counting on a date-only value, so UTC arithmetic is exactly right here.
+function addDays(iso, days) {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 const app = express();
 
 // ── Security headers ────────────────────────────────────────────────────────
@@ -373,13 +398,13 @@ app.get("/api/integrations/summary", requireApiKey, (req, res) => {
     const reconcileLog = data.reconcileLog || [];
 
     const now = new Date();
-    const month = now.toISOString().slice(0, 7);
+    const today = todayISO();
+    const month = today.slice(0, 7);
     const inMonth = (t) => (t.date || "").slice(0, 7) === month;
     const monthIncome = transactions.filter((t) => t.type === "income" && inMonth(t)).reduce((s, t) => s + t.amount, 0);
     const monthExpenses = transactions.filter((t) => t.type === "expense" && inMonth(t)).reduce((s, t) => s + t.amount, 0);
 
-    const sevenDays = new Date(now.getTime() + 7 * 86400_000).toISOString().slice(0, 10);
-    const today = now.toISOString().slice(0, 10);
+    const sevenDays = addDays(today, 7);
     const upcomingBills = recurring
       .filter((r) => r.nextDueDate <= sevenDays)
       .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate))
