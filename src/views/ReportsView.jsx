@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { PALETTE } from "../lib/constants.js";
 import { fmtAUD, monthKey, todayISO, formatMonth } from "../lib/utils.js";
+import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { PieChart } from "../components/PieChart.jsx";
 import { IconHistory } from "../components/Icons.jsx";
 
@@ -107,11 +108,9 @@ My transactions and bank statement:
   const [pieMonth, setPieMonth] = useState(activeMonth || allMonths[0] || todayISO().slice(0, 7));
   useEffect(() => { if (activeMonth) setPieMonth(activeMonth); }, [activeMonth]);
 
-  const clamped = reportRange.end < reportRange.start ? { start: reportRange.start, end: reportRange.start } : reportRange;
-  const rangeTx = transactions.filter((t) => t.date >= clamped.start && t.date <= clamped.end);
-  const income = rangeTx.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
-  const expenses = rangeTx.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-  const net = income - expenses;
+  const clamped = normaliseRange(reportRange);
+  const rangeTx = filterTransactions(transactions, clamped);
+  const { income, expense: expenses, net } = totals(rangeTx);
 
   const daysInRange = Math.max(1, Math.round((new Date(clamped.end) - new Date(clamped.start)) / 86400000) + 1);
   const avgDaily = daysInRange > 0 ? expenses / daysInRange : 0;
@@ -132,12 +131,9 @@ My transactions and bank statement:
 
   const topCat = breakdown[0]?.cat?.name || "—";
 
-  const months = Array.from(new Set(rangeTx.map((t) => monthKey(t.date)))).sort();
-  const monthlyTrend = months.map((m) => ({
-    month: m,
-    income: rangeTx.filter((t) => monthKey(t.date) === m && t.type === "income").reduce((s, t) => s + t.amount, 0),
-    expense: rangeTx.filter((t) => monthKey(t.date) === m && t.type === "expense").reduce((s, t) => s + t.amount, 0),
-  }));
+  // The trend reads oldest-first, left to right, so it is the month grouping
+  // reversed rather than a second pass over the range.
+  const monthlyTrend = groupByMonth(rangeTx).reverse();
   const maxTrend = Math.max(1, ...monthlyTrend.flatMap((m) => [m.income, m.expense]));
 
   const goToCategory = (catId) => { if (onNavigateToCategory && catId) onNavigateToCategory(catId); };
@@ -270,7 +266,7 @@ My transactions and bank statement:
             data={categories.filter((c) => c.type === "expense").map((c) => ({
               label: c.name,
               colour: c.colour,
-              value: transactions.filter((t) => monthKey(t.date) === pieMonth && t.categoryId === c.id && t.type === "expense").reduce((s, t) => s + t.amount, 0),
+              value: totals(filterTransactions(transactions, { month: pieMonth, categoryId: c.id, type: "expense" })).expense,
             })).filter((d) => d.value > 0)}
           />
         </div>
@@ -281,7 +277,7 @@ My transactions and bank statement:
             data={categories.filter((c) => c.type === "expense").map((c) => ({
               label: c.name,
               colour: c.colour,
-              value: rangeTx.filter((t) => t.categoryId === c.id && t.type === "expense").reduce((s, t) => s + t.amount, 0),
+              value: totals(filterTransactions(rangeTx, { categoryId: c.id, type: "expense" })).expense,
             })).filter((d) => d.value > 0)}
           />
         </div>

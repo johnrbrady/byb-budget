@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD, monthKey } from "../lib/utils.js";
+import { fmtAUD } from "../lib/utils.js";
+import { filterTransactions, totals } from "../lib/txQuery.js";
 import { TxForm } from "../components/forms.jsx";
 import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
 import { AnimatedCurrency } from "../components/AnimatedNumber.jsx";
@@ -57,9 +58,12 @@ export function Dashboard({
 
   const [quickCat, setQuickCat] = useState(null);
 
-  const spentThisMonth = (catId) => transactions
-    .filter((t) => monthKey(t.date) === activeMonth && t.categoryId === catId && t.type === "expense")
-    .reduce((s, t) => s + t.amount, 0);
+  // The Dashboard stays on the global month — that is the whole point of the
+  // month selector — but it asks the same question the Transactions list asks,
+  // through the same function, so the two can never disagree about which rows
+  // belong to a month.
+  const spentThisMonth = (catId) =>
+    totals(filterTransactions(transactions, { month: activeMonth, categoryId: catId, type: "expense" })).expense;
 
   const handleReconcile = async () => {
     const ok = await askConfirm({

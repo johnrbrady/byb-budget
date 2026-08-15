@@ -591,3 +591,302 @@ describe("Money movement integrity", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transaction history and range reports
+//
+// TransactionsView used to hard-filter every row to `activeMonth`, the global
+// month the header selector sets and every other view shares. Opening an
+// envelope therefore showed only what was spent in the month currently being
+// viewed, and the only way to see anything older was to move the global month —
+// which moved the Dashboard, Envelopes and Recurring views with it.
+//
+// The whole history is already in the data (every transaction carries a full ISO
+// date), so these tests span a year boundary (Nov 2025 → Jun 2026) to pin month
+// ordering and grouping rather than just "two adjacent months happen to work".
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Transaction history and range reports", () => {
+  const groceries = { id: "c-groceries", name: "Groceries", type: "expense", colour: "#7FB069", baseAmount: 400, envelopeBalance: 400, isAccumulating: false };
+  const fuel = { id: "c-fuel", name: "Fuel", type: "expense", colour: "#5F8A4F", baseAmount: 200, envelopeBalance: 200, isAccumulating: false };
+
+  const shop = (id, date, amount, description, categoryId = "c-groceries") => ({
+    id, date, amount, type: "expense", categoryId, description,
+    isRecurring: false, recurringId: null, addedBy: "u-user1", createdAt: `${date}T00:00:00Z`,
+  });
+
+  // Six Groceries months, newest first, crossing from 2025 into 2026. The clock
+  // is pinned to 2026-06-15 (jest.setup.js), so "2026-06" is the active month.
+  const history = [
+    shop("t-jun", "2026-06-02", 60, "June shop"),
+    shop("t-may", "2026-05-04", 55, "May shop"),
+    shop("t-feb", "2026-02-10", 40, "February shop"),
+    shop("t-jan", "2026-01-08", 35, "January shop"),
+    shop("t-dec", "2025-12-20", 30, "December shop"),
+    shop("t-nov", "2025-11-15", 25, "November shop"),
+    shop("t-fuel", "2026-02-11", 90, "Petrol", "c-fuel"),
+  ];
+
+  const renderHistory = (extra = {}) =>
+    renderApp({ categories: [groceries, fuel], transactions: history, ...extra });
+
+  // The Dashboard envelope row is the stakeholder's entry point: tap Groceries.
+  const openGroceriesFromDashboard = () => fireEvent.click(screen.getByText("Groceries"));
+
+  const rowIds = () =>
+    Array.from(document.querySelectorAll("[data-testid^='tx-row-']"))
+      .map((el) => el.getAttribute("data-testid").replace("tx-row-", ""));
+
+  describe("envelope drill-down", () => {
+    test("tapping Groceries shows earlier months, not only the active one", async () => {
+      renderHistory();
+      await settle();
+      openGroceriesFromDashboard();
+
+      // The active month was always reachable…
+      expect(screen.getByTestId("tx-row-t-jun")).toBeInTheDocument();
+      // …these were not: they are in earlier months, and the view hard-filtered
+      // every row to the global active month.
+      expect(screen.getByTestId("tx-row-t-may")).toBeInTheDocument();
+      expect(screen.getByTestId("tx-row-t-feb")).toBeInTheDocument();
+      // Another envelope's spending never leaks in.
+      expect(screen.queryByTestId("tx-row-t-fuel")).not.toBeInTheDocument();
+    });
+
+    test("months are headed and subtotalled, newest first, across the year boundary", async () => {
+      renderHistory();
+      await settle();
+      openGroceriesFromDashboard();
+      fireEvent.click(screen.getByTestId("tx-load-more"));
+
+      const headings = Array.from(document.querySelectorAll("[data-testid^='tx-month-heading-']"))
+        .map((el) => el.getAttribute("data-testid").replace("tx-month-heading-", ""));
+      expect(headings).toEqual(["2026-06", "2026-05", "2026-02", "2026-01", "2025-12", "2025-11"]);
+
+      expect(screen.getByTestId("tx-month-heading-2026-02")).toHaveTextContent("February 2026");
+      expect(screen.getByTestId("tx-month-total-2026-02")).toHaveTextContent("$40.00");
+      expect(screen.getByTestId("tx-month-total-2025-11")).toHaveTextContent("$25.00");
+    });
+
+    test("the global month selector is not touched by the drill-down", async () => {
+      renderHistory();
+      await settle();
+      expect(screen.getByTestId("month-select")).toHaveValue("2026-06");
+      openGroceriesFromDashboard();
+
+      expect(screen.getByTestId("tx-row-t-feb")).toBeInTheDocument();
+      expect(screen.getByTestId("month-select")).toHaveValue("2026-06");
+    });
+  });
+
+  // The escape hatch belongs to the transactions list alone. A Dashboard that
+  // quietly started reporting all-time spending would look plausible and be
+  // wrong, so its month gate is asserted in both directions.
+  describe("the Dashboard still obeys the global month", () => {
+    const groceriesRow = () => screen.getByText("Groceries").closest(".byb-hover-row");
+
+    test("it reports the selected month's spend, and follows the selector when it moves", async () => {
+      renderHistory();
+      await settle();
+      expect(within(groceriesRow()).getByText("$60.00")).toBeInTheDocument(); // June
+
+      fireEvent.change(screen.getByTestId("month-select"), { target: { value: "2026-02" } });
+      expect(within(groceriesRow()).getByText("$40.00")).toBeInTheDocument(); // February
+      expect(within(groceriesRow()).queryByText("$60.00")).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByTestId("month-select"), { target: { value: "2026-03" } });
+      expect(within(groceriesRow()).getByText("$0.00")).toBeInTheDocument(); // nothing in March
+    });
+
+    test("visiting an envelope's history and coming back leaves the Dashboard on the month", async () => {
+      renderHistory();
+      await settle();
+      openGroceriesFromDashboard();
+      fireEvent.click(screen.getByTestId("tx-load-more"));
+      expect(screen.getByTestId("tx-row-t-nov")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("nav-dashboard"));
+      expect(within(groceriesRow()).getByText("$60.00")).toBeInTheDocument();
+    });
+  });
+
+  describe("progressive loading", () => {
+    test("the initial render is bounded and older months arrive on demand", async () => {
+      renderHistory();
+      await settle();
+      openGroceriesFromDashboard();
+
+      // Three newest months only — the older three are not in the DOM at all,
+      // so this is a real bound and not a hidden-by-CSS pretence.
+      expect(rowIds()).toEqual(["t-jun", "t-may", "t-feb"]);
+      expect(document.querySelectorAll("[data-testid^='tx-month-heading-']")).toHaveLength(3);
+      expect(screen.queryByTestId("tx-row-t-nov")).not.toBeInTheDocument();
+      expect(screen.getByTestId("tx-load-more")).toHaveTextContent("3");
+
+      fireEvent.click(screen.getByTestId("tx-load-more"));
+      expect(rowIds()).toEqual(["t-jun", "t-may", "t-feb", "t-jan", "t-dec", "t-nov"]);
+      expect(screen.queryByTestId("tx-load-more")).not.toBeInTheDocument();
+    });
+
+    // The bound has to hold against a real history, not just a six-row fixture.
+    test("two years of history still render three months on first paint", async () => {
+      // One shop a month, 2026-06 walking back to 2024-07.
+      const long = [];
+      for (let i = 0; i < 24; i++) {
+        let y = 2026;
+        let m = 6 - i;
+        while (m <= 0) { m += 12; y -= 1; }
+        long.push(shop(`t-${i}`, `${y}-${String(m).padStart(2, "0")}-05`, 10 + i, `Shop ${i}`));
+      }
+      renderApp({ categories: [groceries, fuel], transactions: long });
+      await settle();
+      openGroceriesFromDashboard();
+
+      expect(document.querySelectorAll("[data-testid^='tx-row-']")).toHaveLength(3);
+      expect(document.querySelectorAll("[data-testid^='tx-month-heading-']")).toHaveLength(3);
+      expect(screen.getByTestId("tx-load-more")).toHaveTextContent("21 more");
+    });
+
+    // On a phone the control loads itself when it scrolls into view. jsdom has no
+    // IntersectionObserver, so the button is what the suite otherwise exercises;
+    // this stubs one in to pin the scroll path too.
+    test("scrolling the control into view loads the next page without a click", async () => {
+      let fire;
+      const observe = jest.fn();
+      global.IntersectionObserver = class {
+        constructor(cb) { fire = cb; }
+        observe(...args) { observe(...args); }
+        disconnect() {}
+      };
+      try {
+        renderHistory();
+        await settle();
+        openGroceriesFromDashboard();
+        expect(rowIds()).toHaveLength(3);
+        expect(observe).toHaveBeenCalled();
+
+        act(() => { fire([{ isIntersecting: true }]); });
+        expect(rowIds()).toEqual(["t-jun", "t-may", "t-feb", "t-jan", "t-dec", "t-nov"]);
+      } finally {
+        delete global.IntersectionObserver;
+      }
+    });
+  });
+
+  describe("custom date-range report", () => {
+    const setRange = (start, end) => {
+      fireEvent.change(screen.getByTestId("tx-range-start"), { target: { value: start } });
+      fireEvent.change(screen.getByTestId("tx-range-end"), { target: { value: end } });
+    };
+    const chooseGroceries = () =>
+      fireEvent.change(screen.getByTestId("tx-filter-category"), { target: { value: "c-groceries" } });
+
+    test("both boundaries are inclusive, and the range total is shown", async () => {
+      renderHistory();
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      chooseGroceries();
+      // Exactly on t-jan's date and exactly on t-may's date.
+      setRange("2026-01-08", "2026-05-04");
+
+      expect(rowIds()).toEqual(["t-may", "t-feb", "t-jan"]);
+      expect(screen.queryByTestId("tx-row-t-dec")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("tx-row-t-jun")).not.toBeInTheDocument();
+      // 55 + 40 + 35
+      expect(screen.getByTestId("filter-expense")).toHaveTextContent("$130.00");
+    });
+
+    test("an inverted range collapses to the start day rather than showing nothing arbitrary", async () => {
+      renderHistory();
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      chooseGroceries();
+      setRange("2026-05-04", "2026-01-08");
+
+      expect(rowIds()).toEqual(["t-may"]);
+    });
+
+    test("a range with nothing in it says so", async () => {
+      renderHistory();
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      chooseGroceries();
+      setRange("2026-03-01", "2026-04-30");
+
+      expect(rowIds()).toEqual([]);
+      expect(screen.getByText("No transactions match the current filter.")).toBeInTheDocument();
+      expect(screen.getByTestId("filter-expense")).toHaveTextContent("$0.00");
+    });
+
+    test("a range beats the global month without changing it", async () => {
+      renderHistory();
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      setRange("2025-11-01", "2025-12-31");
+
+      expect(rowIds()).toEqual(["t-dec", "t-nov"]);
+      expect(screen.getByTestId("month-select")).toHaveValue("2026-06");
+    });
+  });
+
+  // jsdom has no matchMedia, so useIsMobile reports desktop and everything above
+  // exercises the table. The phone is the primary interface for this app, and
+  // the card list is a separate branch of the same component, so it gets its own
+  // pass over the same behaviour.
+  describe("on a phone", () => {
+    beforeEach(() => {
+      window.matchMedia = jest.fn().mockImplementation((query) => ({
+        matches: true, media: query, onchange: null,
+        addEventListener: jest.fn(), removeEventListener: jest.fn(),
+        addListener: jest.fn(), removeListener: jest.fn(), dispatchEvent: jest.fn(),
+      }));
+    });
+    afterEach(() => { delete window.matchMedia; });
+
+    test("the card list groups into months, subtotals them, and pages", async () => {
+      renderHistory();
+      await settle();
+      openGroceriesFromDashboard();
+
+      expect(rowIds()).toEqual(["t-jun", "t-may", "t-feb"]);
+      expect(screen.getByTestId("tx-month-heading-2026-02")).toHaveTextContent("February 2026");
+      expect(screen.getByTestId("tx-month-total-2026-02")).toHaveTextContent("$40.00");
+
+      fireEvent.click(screen.getByTestId("tx-load-more"));
+      expect(rowIds()).toEqual(["t-jun", "t-may", "t-feb", "t-jan", "t-dec", "t-nov"]);
+      expect(screen.getByTestId("tx-month-heading-2025-11")).toHaveTextContent("November 2025");
+    });
+
+    test("the date range is reachable from the mobile filter panel", async () => {
+      renderHistory();
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      fireEvent.click(screen.getByText("Filter"));
+      fireEvent.change(screen.getByTestId("tx-filter-category"), { target: { value: "c-groceries" } });
+      fireEvent.change(screen.getByTestId("tx-range-start"), { target: { value: "2026-01-08" } });
+      fireEvent.change(screen.getByTestId("tx-range-end"), { target: { value: "2026-05-04" } });
+
+      expect(rowIds()).toEqual(["t-may", "t-feb", "t-jan"]);
+      expect(screen.getByTestId("filter-expense")).toHaveTextContent("$130.00");
+    });
+  });
+
+  describe("defaults are unchanged", () => {
+    test("with no category and no range the list is still the active month alone", async () => {
+      renderHistory();
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+
+      expect(rowIds()).toEqual(["t-jun"]);
+      expect(document.querySelectorAll("[data-testid^='tx-month-heading-']")).toHaveLength(0);
+    });
+
+    test("moving the global month moves the default list with it", async () => {
+      renderHistory();
+      await settle();
+      fireEvent.click(screen.getByTestId("nav-transactions"));
+      fireEvent.change(screen.getByTestId("month-select"), { target: { value: "2026-02" } });
+
+      expect(rowIds()).toEqual(["t-fuel", "t-feb"]);
+    });
+  });
+});

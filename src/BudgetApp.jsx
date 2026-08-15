@@ -73,7 +73,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     return user?.name === "User 1";
   });
   const [activeMonth, setActiveMonth] = useState(todayISO().slice(0, 7));
-  const [txFilters, setTxFilters] = useState({ type: "all", categoryId: "all", addedBy: "all", search: "" });
+  // `start`/`end` are the Transactions view's optional explicit date range. Blank
+  // means "no range", which leaves the list on the global month — or on a single
+  // envelope's whole history, when one is selected.
+  const [txFilters, setTxFilters] = useState({ type: "all", categoryId: "all", addedBy: "all", search: "", start: "", end: "" });
   const [reportRange, setReportRange] = useState({ start: todayISO().slice(0, 4) + "-01-01", end: todayISO() });
   const [editingTx, setEditingTx] = useState(null);
   const [txFormOpen, setTxFormOpen] = useState(false);
@@ -116,7 +119,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setViewAnim(anim);
     setView(v);
     if (v === "transactions") {
-      setTxFilters({ type: "all", categoryId: "all", addedBy: "all", search: "" });
+      setTxFilters({ type: "all", categoryId: "all", addedBy: "all", search: "", start: "", end: "" });
     }
     setEditingTx(null);
     setTxFormOpen(false);
@@ -127,10 +130,11 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setRuleFormOpen(false);
   };
 
-  // Navigate to Transactions tab filtered by category (sets filter AFTER handleSetView to override the reset)
+  // Navigate to Transactions tab filtered by category (sets filter AFTER handleSetView to override the reset).
+  // No date range, so the envelope opens on its whole history rather than the global month.
   const navigateToCategory = (catId) => {
     handleSetView("transactions");
-    setTxFilters({ type: "all", categoryId: catId, addedBy: "all", search: "" });
+    setTxFilters({ type: "all", categoryId: catId, addedBy: "all", search: "", start: "", end: "" });
   };
 
   // ── Swipe between tabs (touch devices) ────────────────────────────────────
