@@ -80,7 +80,9 @@ under `src/`.
   one-year bars and month-over-month comparisons (click through to transactions),
   transfers and reconcile logs, XLSX export, direct bank-statement CSV import
   with preview and duplicate protection, and AI-assisted JSON paste import.
-  Historical budget amounts are not yet recorded, so the
+  Accumulating envelopes can carry a target amount and due date, with the
+  remaining amount and required monthly fill shown on both Envelopes and the
+  Dashboard. Historical budget amounts are not yet recorded, so the
   envelope charts compare spending rather than budget performance.
 - **Transaction filters** — explicit From/To dates show a prominent total spent
   for the exact filtered result. Transaction descriptions suggest previously

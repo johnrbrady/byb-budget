@@ -215,15 +215,24 @@ export function AddAmountForm({ categories, onSave, onCancel, styles }) {
 
 export function CatForm({ cat, onSave, onCancel, onDelete, styles }) {
   const [form, setForm] = useState(cat
-    ? { ...cat, baseAmount: centsToInput(cat.baseAmount ?? cat.monthlyBudget ?? 0) }
-    : { name: "", type: "expense", colour: "#7FB069", baseAmount: "", isAccumulating: false, envelopeBalance: 0 }
+    ? { ...cat, baseAmount: centsToInput(cat.baseAmount ?? cat.monthlyBudget ?? 0), targetAmount: cat.targetAmount ? centsToInput(cat.targetAmount) : "", targetDate: cat.targetDate || "" }
+    : { name: "", type: "expense", colour: "#7FB069", baseAmount: "", isAccumulating: false, envelopeBalance: 0, targetAmount: "", targetDate: "" }
   );
+  const [targetError, setTargetError] = useState("");
   const submit = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
     const baseAmount = form.type === "expense" && form.baseAmount !== "" ? inputCents(form.baseAmount) : 0;
     if (baseAmount === null) return;
-    onSave({ ...form, baseAmount, monthlyBudget: baseAmount });
+    const hasTargetAmount = form.type === "expense" && form.targetAmount !== "";
+    const targetAmount = hasTargetAmount ? inputCents(form.targetAmount) : 0;
+    const targetDate = form.type === "expense" ? (form.targetDate || "") : "";
+    if (targetAmount === null || (targetAmount > 0 && !targetDate) || (targetDate && !(targetAmount > 0))) {
+      setTargetError("Enter both a target amount and due date, or leave both blank.");
+      return;
+    }
+    setTargetError("");
+    onSave({ ...form, baseAmount, monthlyBudget: baseAmount, targetAmount, targetDate, isAccumulating: targetAmount > 0 ? true : form.isAccumulating });
   };
   const mobile = styles.isMobile;
   return (
@@ -262,6 +271,18 @@ export function CatForm({ cat, onSave, onCancel, onDelete, styles }) {
               </>
             )}
           </div>
+          <div style={{ gridColumn: "span 2" }}>
+            <div style={styles.label}>Savings target (optional)</div>
+            <input aria-label="Savings target amount" style={styles.input} type="number" step="0.01" min="0" inputMode="decimal"
+              placeholder="e.g. 900" value={form.targetAmount ?? ""}
+              onChange={(e) => { setForm({ ...form, targetAmount: e.target.value }); setTargetError(""); }} />
+          </div>
+          <div>
+            <div style={styles.label}>Target due date</div>
+            <input aria-label="Target due date" style={styles.input} type="date" value={form.targetDate || ""}
+              onChange={(e) => { setForm({ ...form, targetDate: e.target.value }); setTargetError(""); }} />
+          </div>
+          {targetError && <div role="alert" style={{ gridColumn: mobile ? "span 2" : "span 3", color: "var(--byb-over)", fontSize: 12 }}>{targetError}</div>}
         </>
       )}
       <div style={{ gridColumn: mobile ? "span 2" : "span 3", display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>

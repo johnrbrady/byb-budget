@@ -14,7 +14,7 @@ const legacy = () => ({
   dataVersion: 7,
   unallocatedBalance: 12.34,
   transactions: [{ amount: 19.99, allocations: [{ amount: 4.56 }] }],
-  categories: [{ envelopeBalance: -0.01, baseAmount: 800.25, monthlyBudget: 800.25, suggestedPct: 2.5, sortOrder: 3 }],
+  categories: [{ envelopeBalance: -0.01, baseAmount: 800.25, monthlyBudget: 800.25, targetAmount: 900.5, suggestedPct: 2.5, sortOrder: 3 }],
   recurring: [{ amount: 10.5, dueDay: 31 }],
   assets: [{ value: 1234.56 }],
   transfers: [{ amount: 7.89 }],
@@ -30,7 +30,7 @@ test("explicit money paths migrate to cents and non-money numerics do not", () =
   expect(cents.dataVersion).toBe(8);
   expect(cents.unallocatedBalance).toBe(1234);
   expect(cents.transactions[0]).toMatchObject({ amount: 1999, allocations: [{ amount: 456 }] });
-  expect(cents.categories[0]).toMatchObject({ envelopeBalance: -1, baseAmount: 80025, monthlyBudget: 80025, suggestedPct: 2.5, sortOrder: 3 });
+  expect(cents.categories[0]).toMatchObject({ envelopeBalance: -1, baseAmount: 80025, monthlyBudget: 80025, targetAmount: 90050, suggestedPct: 2.5, sortOrder: 3 });
   expect(cents.recurring[0]).toMatchObject({ amount: 1050, dueDay: 31 });
   expect(cents.assets[0].value).toBe(123456);
   expect(cents.transfers[0].amount).toBe(789);

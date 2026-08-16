@@ -65,6 +65,24 @@ test("category and recurring forms round-trip their edit values at the boundary"
   expect(saveRule).toHaveBeenCalledWith(expect.objectContaining({ amount: 1999 }));
 });
 
+test("an envelope target saves exact cents, a due date and accumulating behaviour", () => {
+  const onSave = jest.fn();
+  render(<CatForm cat={categories[1]} onSave={onSave} onCancel={() => {}} styles={styles} />);
+  fireEvent.change(screen.getByLabelText("Savings target amount"), { target: { value: "900.01" } });
+  fireEvent.change(screen.getByLabelText("Target due date"), { target: { value: "2027-03-31" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ targetAmount: 90001, targetDate: "2027-03-31", isAccumulating: true }));
+});
+
+test("a half-entered target cannot be silently saved", () => {
+  const onSave = jest.fn();
+  render(<CatForm cat={categories[1]} onSave={onSave} onCancel={() => {}} styles={styles} />);
+  fireEvent.change(screen.getByLabelText("Savings target amount"), { target: { value: "900" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("both a target amount and due date");
+  expect(onSave).not.toHaveBeenCalled();
+});
+
 test("Add Income submits cents and exact split totals", () => {
   const onSubmit = jest.fn();
   render(<AddIncomeFlow categories={categories} recurring={[]} unallocatedBalance={0} onSubmit={onSubmit} onCancel={() => {}} styles={styles} />);

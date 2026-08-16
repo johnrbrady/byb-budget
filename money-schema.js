@@ -26,7 +26,7 @@ function walkMoney(document, visit) {
     for (const allocation of tx.allocations || []) field(allocation, "amount", "transactions[].allocations[].amount");
   }
   for (const category of document.categories || []) {
-    fields(category, ["envelopeBalance", "baseAmount", "monthlyBudget"], "categories[]");
+    fields(category, ["envelopeBalance", "baseAmount", "monthlyBudget", "targetAmount"], "categories[]");
   }
   for (const rule of document.recurring || []) field(rule, "amount", "recurring[].amount");
   for (const asset of document.assets || []) field(asset, "value", "assets[].value");

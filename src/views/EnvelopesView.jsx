@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { centsToInput, fmtAUD, parseAUDToCents } from "../lib/utils.js";
+import { centsToInput, fmtAUD, parseAUDToCents, todayISO } from "../lib/utils.js";
+import { envelopeTarget } from "../lib/targets.js";
 import { CatForm } from "../components/forms.jsx";
 import { FirstTimeFillWizard } from "../components/FirstTimeFillWizard.jsx";
 import { AnimatedCurrency } from "../components/AnimatedNumber.jsx";
@@ -16,6 +17,9 @@ function EnvelopeCard({ c, styles, editingCat, dragId, dragOverId, dragHandlers,
   const status = envelopeStatus(balance, base);
   const balColour = statusColour(status);
   const filled = fillFraction(balance, base);
+  const target = envelopeTarget(c, todayISO());
+  const targetLabel = target?.status === "complete" ? "Target reached" : target?.status === "overdue" ? "Overdue" : target?.status === "on-track" ? "On track" : "Increase monthly fill";
+  const targetColour = target?.status === "complete" || target?.status === "on-track" ? "var(--byb-ok)" : "var(--byb-over)";
   const lp = useLongPress(() => onLongPress(c));
   return (
     <div
@@ -79,6 +83,20 @@ function EnvelopeCard({ c, styles, editingCat, dragId, dragOverId, dragHandlers,
         </span>
         <span>{base > 0 ? `${Math.round(filled * 100)}% of ${fmtAUD(base)}/mo` : "No monthly amount set"}{c.isAccumulating ? " · accumulating" : ""}</span>
       </div>
+      {target && (
+        <div data-testid={`env-target-${c.id}`} style={{ background: "var(--byb-surface-sunken)", borderRadius: 6, padding: "8px 10px", marginBottom: 10, fontSize: 11 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
+            <strong>Target {fmtAUD(target.targetAmount)} by {target.targetDate}</strong>
+            <strong style={{ color: targetColour, whiteSpace: "nowrap" }}>{targetLabel}</strong>
+          </div>
+          <div className="byb-meter" style={{ height: 5, marginBottom: 5 }}>
+            <div className="byb-meter-fill" style={{ width: `${Math.max(0, Math.min(100, (target.balance / target.targetAmount) * 100))}%`, background: targetColour }} />
+          </div>
+          <span style={{ color: styles.textMuted }}>
+            {target.remaining === 0 ? "Fully funded" : `${fmtAUD(target.remaining)} left · ${fmtAUD(target.requiredMonthly)}/month needed`}
+          </span>
+        </div>
+      )}
       <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
         <button style={{ ...styles.buttonGhost, fontSize: 12, padding: "6px 12px", flex: 1 }} onClick={(e) => { e.stopPropagation(); onEdit(c); }}>Edit</button>
         {canFill && (

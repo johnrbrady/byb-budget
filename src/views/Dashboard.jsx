@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD } from "../lib/utils.js";
+import { fmtAUD, todayISO } from "../lib/utils.js";
+import { envelopeTarget } from "../lib/targets.js";
 import { filterTransactions, totals } from "../lib/txQuery.js";
 import { TxForm } from "../components/forms.jsx";
 import { AddIncomeFlow } from "../components/AddIncomeFlow.jsx";
@@ -18,6 +19,7 @@ function EnvelopeRow({ cat, spent, styles, onNavigate, onLongPress }) {
   const base = cat.baseAmount || 0;
   const status = envelopeStatus(balance, base);
   const balColour = statusColour(status);
+  const target = envelopeTarget(cat, todayISO());
   const lp = useLongPress(() => onLongPress(cat));
   return (
     <div
@@ -44,6 +46,11 @@ function EnvelopeRow({ cat, spent, styles, onNavigate, onLongPress }) {
       <div style={{ fontSize: 11, color: styles.textMuted }}>
         Spent <strong style={{ color: styles.text }}>{fmtAUD(spent)}</strong> this month
       </div>
+      {target && (
+        <div data-testid={`dashboard-target-${cat.id}`} style={{ fontSize: 11, color: target.status === "complete" || target.status === "on-track" ? "var(--byb-ok)" : "var(--byb-over)", fontWeight: 600, marginTop: 4 }}>
+          {target.status === "complete" ? `Target reached · ${fmtAUD(target.targetAmount)}` : `${fmtAUD(target.remaining)} left by ${target.targetDate} · ${fmtAUD(target.requiredMonthly)}/month`}
+        </div>
+      )}
     </div>
   );
 }
