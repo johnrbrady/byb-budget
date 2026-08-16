@@ -107,6 +107,7 @@ if (!fs.existsSync(DATA_FILE)) {
       assets: [],
       transfers: [],
       reconcileLog: [],
+      budgetHistory: [],
       unallocatedBalance: 0,
       moneyScale: MONEY_SCALE,
       dataVersion: 0,
@@ -214,7 +215,7 @@ function validateBudgetData(data) {
   // `adjustments` before it ever reached a deployed instance. Current clients
   // never send it, but it stays accepted so that a client still running the
   // build that wrote it is not met with a 400 on every save.
-  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "adjustments", "openingBalances", "moneyScale", "dataVersion"];
+  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "adjustments", "openingBalances", "budgetHistory", "moneyScale", "dataVersion"];
   for (const key of Object.keys(data)) {
     if (!allowed.includes(key)) return `Unknown field: ${key}`;
   }
@@ -226,6 +227,7 @@ function validateBudgetData(data) {
   if (data.transfers && !Array.isArray(data.transfers)) return "transfers must be an array";
   if (data.reconcileLog && !Array.isArray(data.reconcileLog)) return "reconcileLog must be an array";
   if (data.adjustments && !Array.isArray(data.adjustments)) return "adjustments must be an array";
+  if (data.budgetHistory && !Array.isArray(data.budgetHistory)) return "budgetHistory must be an array";
   if (data.openingBalances && !Array.isArray(data.openingBalances)) return "openingBalances must be an array";
   if (data.unallocatedBalance !== undefined && typeof data.unallocatedBalance !== "number") {
     return "unallocatedBalance must be a number";
@@ -377,6 +379,7 @@ app.get("/api/data", requireAuth, (req, res) => {
     // Migrate-on-read: older data files have no version or reconcile log
     if (typeof data.dataVersion !== "number") data.dataVersion = 0;
     if (!Array.isArray(data.reconcileLog)) data.reconcileLog = [];
+    if (!Array.isArray(data.budgetHistory)) data.budgetHistory = [];
     const requestedScale = req.headers[MONEY_SCALE_HEADER];
     if (requestedScale === undefined) return res.json(toDollarsDocument(data));
     if (requestedScale !== String(MONEY_SCALE)) return res.status(400).json({ error: "Unsupported money scale" });

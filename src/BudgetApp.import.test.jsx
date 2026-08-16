@@ -47,6 +47,9 @@ test("CSV approval persists rows and their exact expense/income ledger effects t
   ]));
   expect(saved.categories.find((category) => category.id === "c-groceries").envelopeBalance).toBe(8750);
   expect(saved.unallocatedBalance).toBe(25000);
+  expect(saved.budgetHistory).toEqual(expect.arrayContaining([
+    expect.objectContaining({ month: "2026-06", categories: expect.arrayContaining([expect.objectContaining({ categoryId: "c-groceries", baseAmount: 0 })]) }),
+  ]));
 
   // Selecting the same statement again is an idempotent no-op, including for
   // the ledger: both existing occurrences are reported, not offered twice.

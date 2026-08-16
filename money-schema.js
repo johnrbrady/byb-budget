@@ -28,6 +28,9 @@ function walkMoney(document, visit) {
   for (const category of document.categories || []) {
     fields(category, ["envelopeBalance", "baseAmount", "monthlyBudget", "targetAmount"], "categories[]");
   }
+  for (const snapshot of document.budgetHistory || []) {
+    for (const category of snapshot.categories || []) fields(category, ["baseAmount", "targetAmount"], "budgetHistory[].categories[]");
+  }
   for (const rule of document.recurring || []) field(rule, "amount", "recurring[].amount");
   for (const asset of document.assets || []) field(asset, "value", "assets[].value");
   for (const transfer of document.transfers || []) field(transfer, "amount", "transfers[].amount");

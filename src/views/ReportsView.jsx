@@ -7,6 +7,7 @@ import { CategorySpendingTrends } from "../components/CategorySpendingTrends.jsx
 import { EmptyState } from "../components/EmptyState.jsx";
 import { IconHistory, IconWallet } from "../components/Icons.jsx";
 import { categoryHistory, normaliseDescription, parseBankCsv } from "../lib/csvImport.js";
+import { budgetHistoryCategories, budgetHistoryRows } from "../lib/budgetHistory.js";
 
 function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   const [editing, setEditing] = useState(false);
@@ -219,13 +220,14 @@ function AdjustmentEntry({ entry, categoriesById, usersById, styles }) {
   );
 }
 
-export function ReportsView({ transactions, categories, categoriesById, usersById, reportRange, setReportRange, handleExport, assets, onSaveAsset, onDeleteAsset, transfers, reconcileLog, adjustments, unallocatedBalance, onSetUnallocated, onImportJSON, onImportTransactions, onNavigateToCategory, activeMonth, activeUserId, styles }) {
+export function ReportsView({ transactions, categories, categoriesById, usersById, reportRange, setReportRange, handleExport, assets, onSaveAsset, onDeleteAsset, transfers, reconcileLog, adjustments, budgetHistory, unallocatedBalance, onSetUnallocated, onImportJSON, onImportTransactions, onNavigateToCategory, activeMonth, activeUserId, styles }) {
   const [assetForm, setAssetForm] = useState(null); // null=closed, {}=new, {id,...}=editing
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importCopied, setImportCopied] = useState(false);
   const [csvPreview, setCsvPreview] = useState(null);
   const [csvError, setCsvError] = useState("");
+  const [budgetCategoryId, setBudgetCategoryId] = useState("all");
 
   const expenseCatList = categories.filter((c) => c.type === "expense");
   const aiPrompt = `Convert my bank statement transactions to JSON format for the BYB budget app.
@@ -372,6 +374,8 @@ My transactions and bank statement:
   // reversed rather than a second pass over the range.
   const monthlyTrend = groupByMonth(rangeTx).reverse();
   const maxTrend = Math.max(1, ...monthlyTrend.flatMap((m) => [m.income, m.expense]));
+  const budgetCategories = budgetHistoryCategories(budgetHistory, categories);
+  const historicalBudgets = budgetHistoryRows(budgetHistory, transactions, budgetCategoryId);
 
   return (
     <div>
@@ -607,6 +611,38 @@ My transactions and bank statement:
         onNavigateToCategory={onNavigateToCategory}
         styles={styles}
       />
+
+      <div style={styles.sectionTitle}>Budget history</div>
+      <div style={{ ...styles.card, marginBottom: styles.isMobile ? 16 : 24 }} data-testid="budget-history">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: styles.textMuted, maxWidth: 560 }}>
+            Monthly plans are kept from the month this feature was installed. Closed months never change, even when today's envelope amount does.
+          </div>
+          <label>
+            <span style={{ ...styles.label, display: "block" }}>Envelope</span>
+            <select aria-label="Budget history envelope" style={styles.input} value={budgetCategoryId} onChange={(event) => setBudgetCategoryId(event.target.value)}>
+              <option value="all">All envelopes</option>
+              {budgetCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+        </div>
+        {historicalBudgets.length === 0 ? (
+          <div style={{ color: styles.textMuted, fontSize: 13 }}>Budget history will appear after the first household save.</div>
+        ) : (
+          <div>
+            {historicalBudgets.map((row) => (
+              <div key={row.month} data-testid="budget-history-row" style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr 1fr" : "minmax(130px, 1fr) repeat(3, minmax(110px, 1fr))", gap: 8, padding: "9px 0", borderBottom: `1px solid ${styles.border}`, alignItems: "baseline" }}>
+                <strong style={{ gridColumn: styles.isMobile ? "span 2" : "auto" }}>{formatMonth(row.month)}</strong>
+                <span><span style={{ color: styles.textMuted, fontSize: 11 }}>Budgeted</span><br /><strong>{row.hasPlan ? fmtAUD(row.budgeted) : "—"}</strong></span>
+                <span><span style={{ color: styles.textMuted, fontSize: 11 }}>Spent</span><br /><strong>{fmtAUD(row.spent)}</strong></span>
+                <span style={{ color: row.variance >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }}>
+                  <span style={{ fontSize: 11 }}>{row.variance >= 0 ? "Under by" : "Over by"}</span><br /><strong>{fmtAUD(Math.abs(row.variance))}</strong>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Reconcile history */}
       <div style={{ ...styles.sectionTitle, display: "flex", alignItems: "center", gap: 6 }}><IconHistory size={14} /> Reconcile history</div>

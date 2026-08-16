@@ -72,6 +72,10 @@ function ReportsHarness({ onImportTransactions = () => ({ ok: true }) } = {}) {
     transfers={[]}
     reconcileLog={[]}
     adjustments={[]}
+    budgetHistory={[
+      { month: "2026-02", categories: [{ categoryId: "c-groceries", categoryName: "Groceries", baseAmount: 45000 }, { categoryId: "c-fuel", categoryName: "Fuel", baseAmount: 10000 }] },
+      { month: "2026-01", categories: [{ categoryId: "c-groceries", categoryName: "Groceries", baseAmount: 40000 }, { categoryId: "c-fuel", categoryName: "Fuel", baseAmount: 10000 }] },
+    ]}
     unallocatedBalance={0}
     onSetUnallocated={() => {}}
     onImportJSON={() => ({ count: 0 })}
@@ -122,4 +126,15 @@ test("the distribution pie switches from one month to any custom date range", ()
   expect(items).toHaveLength(1);
   expect(items[0]).toHaveAttribute("data-label", "Fuel");
   expect(items[0]).toHaveAttribute("data-value", "3000");
+});
+
+test("budget history keeps each month's plan and compares it with actual category spending", () => {
+  render(<ReportsHarness />);
+  const history = screen.getByTestId("budget-history");
+  expect(within(history).getAllByTestId("budget-history-row")[0]).toHaveTextContent("February 2026Budgeted$550.00Spent$30.00Under by$520.00");
+
+  fireEvent.change(within(history).getByLabelText("Budget history envelope"), { target: { value: "c-groceries" } });
+  const [february, january] = within(history).getAllByTestId("budget-history-row");
+  expect(february).toHaveTextContent("Budgeted$450.00Spent$0.00Under by$450.00");
+  expect(january).toHaveTextContent("Budgeted$400.00Spent$10.00Under by$390.00");
 });

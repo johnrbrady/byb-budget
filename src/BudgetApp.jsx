@@ -17,6 +17,7 @@ import { EnvelopesView } from "./views/EnvelopesView.jsx";
 import { RecurringView } from "./views/RecurringView.jsx";
 import { ReportsView } from "./views/ReportsView.jsx";
 import { transactionFingerprint } from "./lib/csvImport.js";
+import { captureBudgetMonth } from "./lib/budgetHistory.js";
 
 const INCOME_COLOURS = ["#A0B894", "#8FA876", "#6B9559", "#7FB069", "#5F8A4F"];
 
@@ -64,6 +65,14 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const [assets, setAssets] = useState(sourceData?.assets?.length ? sourceData.assets : []);
   const [transfers, setTransfers] = useState(sourceData?.transfers?.length ? sourceData.transfers : []);
   const [reconcileLog, setReconcileLog] = useState(Array.isArray(sourceData?.reconcileLog) ? sourceData.reconcileLog : []);
+  // The first month cannot be reconstructed retroactively, so seed it in local
+  // state on load and carry it into the next ordinary save. Closed months are
+  // never rewritten; the current one reflects the plan as it is adjusted.
+  const [budgetHistory, setBudgetHistory] = useState(() => captureBudgetMonth(
+    Array.isArray(sourceData?.budgetHistory) ? sourceData.budgetHistory : [],
+    initCategories,
+    todayISO().slice(0, 7)
+  ));
   // Every deliberate change to the household total that is not a transaction:
   // opening the envelopes at setup, resetting all balances, setting unallocated
   // by hand. One log rather than three, because they are one question — "what
@@ -251,7 +260,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   };
 
   const persist = (patch) => {
-    const document = { transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments, ...patch, moneyScale: MONEY_SCALE };
+    const nextCategories = patch.categories || categories;
+    const nextBudgetHistory = captureBudgetMonth(budgetHistory, nextCategories, todayISO().slice(0, 7));
+    setBudgetHistory(nextBudgetHistory);
+    const document = { transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments, budgetHistory: nextBudgetHistory, ...patch, moneyScale: MONEY_SCALE };
     onSave?.(legacyInput ? toDollarsDocument(document) : document);
   };
 
@@ -1027,6 +1039,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
                   onImportJSON={importFromJSON}
                   onImportTransactions={importTransactions}
                   activeUserId={activeUserId}
+                  budgetHistory={budgetHistory}
                   onNavigateToCategory={navigateToCategory}
                   activeMonth={activeMonth}
                   styles={styles}

@@ -124,16 +124,16 @@ test("a stale second session gets 409 without changing data or dataVersion", asy
       port,
       "POST",
       "/api/data",
-      { ...centsView.body, unallocatedBalance: 1234 },
+      { ...centsView.body, unallocatedBalance: 1234, budgetHistory: [{ month: "2026-08", categories: [{ categoryId: "c-food", categoryName: "Food", baseAmount: 50000, targetAmount: 90000, targetDate: "2027-03-31" }] }] },
       firstLogin.body.token,
       { "X-BYB-Money-Scale": "100" }
     );
     expect(centsSave).toMatchObject({ status: 200, body: { dataVersion: 2 } });
 
     const legacyView = await request(port, "GET", "/api/data", undefined, firstLogin.body.token);
-    expect(legacyView.body).toMatchObject({ unallocatedBalance: 12.34, dataVersion: 2 });
+    expect(legacyView.body).toMatchObject({ unallocatedBalance: 12.34, dataVersion: 2, budgetHistory: [{ month: "2026-08", categories: [{ baseAmount: 500, targetAmount: 900 }] }] });
     expect(legacyView.body).not.toHaveProperty("moneyScale");
-    expect(JSON.parse(fs.readFileSync(path.join(dataDir, "budget.json"), "utf8"))).toMatchObject({ moneyScale: 100, unallocatedBalance: 1234, dataVersion: 2 });
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, "budget.json"), "utf8"))).toMatchObject({ moneyScale: 100, unallocatedBalance: 1234, dataVersion: 2, budgetHistory: [{ categories: [{ baseAmount: 50000, targetAmount: 90000 }] }] });
 
     const summary = await request(port, "GET", "/api/integrations/summary", undefined, undefined, { "X-API-Key": "test-api-key" });
     expect(summary.status).toBe(200);

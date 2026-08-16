@@ -82,8 +82,9 @@ under `src/`.
   with preview and duplicate protection, and AI-assisted JSON paste import.
   Accumulating envelopes can carry a target amount and due date, with the
   remaining amount and required monthly fill shown on both Envelopes and the
-  Dashboard. Historical budget amounts are not yet recorded, so the
-  envelope charts compare spending rather than budget performance.
+  Dashboard. Reports retain each month's envelope plan from the month this
+  feature is installed and compare it with actual spending; older plans are
+  not fabricated because the previous data model did not record them.
 - **Transaction filters** — explicit From/To dates show a prominent total spent
   for the exact filtered result. Transaction descriptions suggest previously
   used household entries as the user types; the history stays local.
