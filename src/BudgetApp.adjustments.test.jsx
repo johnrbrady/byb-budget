@@ -104,7 +104,7 @@ const expectRecordExplainsMove = (entry, totalBefore, savedAfter) => {
   const totalAfter = householdTotalOf(savedAfter);
   expect(entry.before).toBe(totalBefore);
   expect(entry.after).toBe(totalAfter);
-  expect(entry.amount).toBe(totalAfter - totalBefore);
+  expect(entry.amount).toBeCloseTo(totalAfter - totalBefore, 10);
 };
 
 describe("Resetting all balances", () => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import BudgetApp from "./BudgetApp.jsx";
 import { exportToXlsx, importFromXlsx } from "./xlsx-helpers.js";
+import { MONEY_SCALE } from "../money-schema.js";
 import "./styles/global.css";
 
 function getToken() {
@@ -48,7 +49,10 @@ export function Root() {
     const token = getToken();
     try {
       const res = await fetch("/api/data", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: {
+          "X-BYB-Money-Scale": String(MONEY_SCALE),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
       if (res.status === 401) {
         // Session expired — clear auth state only. The welcome flag is
@@ -94,6 +98,7 @@ export function Root() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-BYB-Money-Scale": String(MONEY_SCALE),
           Authorization: `Bearer ${getToken()}`,
         },
         body: JSON.stringify({ ...data, dataVersion: versionRef.current }),

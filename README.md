@@ -24,6 +24,7 @@ npm run server     # API only (also serves dist/ if it exists)
 npm run build      # production bundle to dist/
 npm run preview    # sanity-check the production build
 npm test           # Jest suite (jsdom)
+npm run money:dry-run -- /path/to/budget.json  # inspect legacy data without changing it
 ```
 
 ## Project structure
@@ -86,8 +87,9 @@ All data lives in `data/` next to `server.js` (or `BYB_DATA_DIR`):
 
 - `budget.json` — transactions, categories, recurring rules, users, assets,
   transfers, reconcile log, and a `dataVersion` counter used to detect
-  concurrent edits (stale writes are rejected with 409 and the client
-  reloads).
+  concurrent edits. Money is stored as integer cents and marked with
+  `moneyScale: 100`; display, XLSX, webhooks and integration responses remain
+  ordinary AUD dollars.
 - `passwords.json` — bcrypt hashes. First sign-in sets the password.
 - `sessions.json` — bearer tokens with expiry (default 72 h).
 
@@ -98,6 +100,28 @@ see **[BACKUP.md](BACKUP.md)** for installing it as a cron job, confirming it is
 still running, and restoring. Restoring is not simply "copy the file back":
 `byb-restore.sh` also has to invalidate sessions, or a browser still holding the
 old data can silently overwrite the restore. BACKUP.md explains why.
+
+### Integer-cents migration
+
+On first start with a legacy dollar-valued `budget.json`, the server validates
+every recognised money path, writes a same-directory temporary file, flushes
+it, and atomically replaces the original. It leaves the exact original as
+`budget.pre-cents-<hash>.json`. Already-migrated files are validated and left
+unchanged, so restarts never convert twice. Unknown numeric fields or unknown
+money scales stop startup rather than being guessed.
+
+```bash
+node migrate-money.js --dry-run /path/to/budget.json
+```
+
+Rollback is a paired operation: stop the cents-aware image, restore the
+pre-cents `budget.json` (plus its matching `passwords.json` when restoring a
+scheduled backup), clear sessions, then start the prior image. Never run an old
+dollar-based image against a `moneyScale: 100` file.
+
+New clients identify cents requests with `X-BYB-Money-Scale: 100`. Legacy tabs
+remain dollar-compatible; the migration's one-time `dataVersion` bump makes a
+stale write take the normal conflict path.
 
 ## Authentication
 
@@ -147,8 +171,10 @@ app is a PWA and behaves like a native app.
 
 - **"Could not reach the server"** — run `npm start` (not just `npm run dev`);
   the API server must be running on :3001.
-- **Save conflict messages** — two people edited at once; the app reloads the
-  latest data automatically. Re-apply your change.
+- **Save conflict messages** — two people edited at once. Your unsaved changes
+  stay on screen and no automatic retry occurs. Use the clearly labelled
+  discard-and-reload action only when you are ready to replace them with the
+  latest server copy.
 - **Service worker serving stale assets after an update** — hard-refresh once
   (Ctrl+Shift+R); the worker takes over on the next load.
 - **Port in use** — change `BYB_PORT` (server) or `server.port` in

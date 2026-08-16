@@ -13,20 +13,32 @@
 // "ledger" — `{ categories, unallocatedBalance }` — returning a new ledger,
 // with no React and no persistence, so the arithmetic can be tested on its own.
 //
-// Amounts are floats, matching the rest of the app and the persisted files.
+// Every amount is an integer number of cents. No formatter or form string is
+// allowed into this module, so addition, subtraction and comparisons are exact.
 
-const balanceOf = (cat) => cat.envelopeBalance || 0;
+const moneyInteger = (value, label) => {
+  if (!Number.isSafeInteger(value)) throw new TypeError(`${label} must be a safe integer number of cents`);
+  return value;
+};
+
+const balanceOf = (cat) => moneyInteger(cat.envelopeBalance || 0, "envelopeBalance");
+
+const validateLedger = ({ categories, unallocatedBalance }) => {
+  moneyInteger(unallocatedBalance || 0, "unallocatedBalance");
+  let total = unallocatedBalance || 0;
+  for (const category of categories || []) total = moneyInteger(total + balanceOf(category), "household total");
+  return { categories, unallocatedBalance };
+};
 
 // Every balance change goes through here, so the "missing field means zero"
 // rule is applied in exactly one place.
 const adjust = (categories, catId, delta) =>
-  categories.map((c) => (c.id === catId ? { ...c, envelopeBalance: balanceOf(c) + delta } : c));
-
-const roundCents = (n) => Math.round(n * 100) / 100;
+  categories.map((c) => (c.id === catId ? { ...c, envelopeBalance: moneyInteger(balanceOf(c) + moneyInteger(delta, "balance delta"), "envelope balance result") } : c));
 
 /** Total household money: unallocated plus everything sitting in envelopes. */
 export function householdTotal({ categories, unallocatedBalance }) {
-  return (categories || []).reduce((s, c) => s + balanceOf(c), 0) + (unallocatedBalance || 0);
+  const ledger = validateLedger({ categories, unallocatedBalance });
+  return (ledger.categories || []).reduce((sum, category) => moneyInteger(sum + balanceOf(category), "household total"), ledger.unallocatedBalance || 0);
 }
 
 // ── Adjustments ─────────────────────────────────────────────────────────────
@@ -88,6 +100,7 @@ export function applyResetBalances({ categories, unallocatedBalance }) {
  * about.
  */
 export function applySetUnallocated({ categories, unallocatedBalance }, target) {
+  moneyInteger(target, "unallocated target");
   const before = householdTotal({ categories, unallocatedBalance });
   return adjustment(before, { categories, unallocatedBalance: target }, {
     unallocated: { before: unallocatedBalance || 0, after: target },
@@ -108,6 +121,9 @@ export function applySetUnallocated({ categories, unallocatedBalance }, target) 
  * the envelopes, never how much of it there is.
  */
 export function applyTxEffect(ledger, tx, factor) {
+  validateLedger(ledger);
+  moneyInteger(tx.amount, "transaction amount");
+  if (![1, -1].includes(factor)) throw new TypeError("transaction factor must be 1 or -1");
   let categories = ledger.categories;
   let unallocatedBalance = ledger.unallocatedBalance;
   if (tx.type === "expense") {
@@ -115,27 +131,39 @@ export function applyTxEffect(ledger, tx, factor) {
   } else if (tx.type === "income") {
     unallocatedBalance += factor * tx.amount;
     for (const alloc of tx.allocations || []) {
+      moneyInteger(alloc.amount, "allocation amount");
       categories = adjust(categories, alloc.catId, factor * alloc.amount);
       unallocatedBalance -= factor * alloc.amount;
     }
   }
-  return { categories, unallocatedBalance };
+  return validateLedger({ categories, unallocatedBalance });
 }
 
 // An income transaction can never route more into envelopes than it brought in.
 // If the user edits the amount down below an existing split, shrink the split
-// proportionally rather than dropping envelopes out of it; the cent left over by
-// rounding goes on the last row so the parts still sum to the whole.
+// proportionally rather than dropping envelopes out of it. Largest-remainder
+// apportionment distributes indivisible cents deterministically and preserves
+// the exact target without ever making the last row negative.
 function scaleAllocationsTo(allocations, amount) {
+  moneyInteger(amount, "transaction amount");
+  allocations.forEach((allocation) => moneyInteger(allocation.amount, "allocation amount"));
   const total = allocations.reduce((s, a) => s + a.amount, 0);
-  if (total <= amount + 0.005 || total <= 0) return allocations;
-  const scaled = allocations.map((a) => ({ ...a, amount: roundCents((a.amount * amount) / total) }));
-  const drift = roundCents(amount - scaled.reduce((s, a) => s + a.amount, 0));
-  if (drift !== 0) {
-    const last = scaled.length - 1;
-    scaled[last] = { ...scaled[last], amount: roundCents(scaled[last].amount + drift) };
-  }
-  return scaled;
+  if (total <= amount || total <= 0) return allocations;
+  const denominator = BigInt(total);
+  const target = BigInt(amount);
+  const shares = allocations.map((allocation, index) => {
+    const numerator = BigInt(allocation.amount) * target;
+    return { index, floor: numerator / denominator, remainder: numerator % denominator };
+  });
+  let left = amount - shares.reduce((sum, share) => sum + Number(share.floor), 0);
+  const ranked = [...shares].sort((a, b) =>
+    a.remainder === b.remainder ? a.index - b.index : (a.remainder > b.remainder ? -1 : 1)
+  );
+  const bonus = new Set(ranked.slice(0, left).map((share) => share.index));
+  return allocations.map((allocation, index) => ({
+    ...allocation,
+    amount: Number(shares[index].floor) + (bonus.has(index) ? 1 : 0),
+  }));
 }
 
 /**
@@ -157,6 +185,13 @@ export function allocationsForForm(form, availableUnallocated) {
   if (form.type !== "income") return [];
   const existing = (Array.isArray(form.allocations) ? form.allocations : []).filter((a) => a && a.catId && a.amount > 0);
   if (existing.length > 1) return scaleAllocationsTo(existing, form.amount);
+  // A raw stored transaction has no form-only select field. Preserve its
+  // single allocation exactly as the multi-row path does. TxForm always sends
+  // `allocatedEnvelopeId`, including an explicit empty string when the user
+  // deliberately clears the selection, so that intent still releases money.
+  if (existing.length === 1 && !Object.prototype.hasOwnProperty.call(form, "allocatedEnvelopeId")) {
+    return scaleAllocationsTo(existing, form.amount);
+  }
   if (!form.allocatedEnvelopeId) return [];
   const allocAmt = Math.min(form.amount, Math.max(0, availableUnallocated + form.amount));
   return allocAmt > 0 ? [{ catId: form.allocatedEnvelopeId, amount: allocAmt }] : [];
@@ -188,15 +223,18 @@ export function saveTransactionEffect(ledger, previousTx, form) {
  * unallocated below zero, which the caller must warn about first.
  */
 export function envelopeFillPlan({ categories, unallocatedBalance }, catId) {
+  validateLedger({ categories, unallocatedBalance });
   const cat = categories.find((c) => c.id === catId) || null;
-  const base = cat ? cat.baseAmount || 0 : 0;
+  const base = cat ? moneyInteger(cat.baseAmount || 0, "baseAmount") : 0;
   const amount = !cat || base <= 0 ? 0 : cat.isAccumulating ? base : Math.max(0, base - balanceOf(cat));
   return { cat, base, amount, shortfall: amount - unallocatedBalance };
 }
 
 /** Move `amount` out of unallocated and into one envelope. */
 export function applyEnvelopeFill({ categories, unallocatedBalance }, catId, amount) {
-  return { categories: adjust(categories, catId, amount), unallocatedBalance: unallocatedBalance - amount };
+  validateLedger({ categories, unallocatedBalance });
+  moneyInteger(amount, "fill amount");
+  return validateLedger({ categories: adjust(categories, catId, amount), unallocatedBalance: unallocatedBalance - amount });
 }
 
 /**
@@ -228,6 +266,7 @@ export function applyOpeningBalances({ categories, unallocatedBalance }, amounts
   const next = (categories || []).map((c) => {
     const amount = amounts[c.id];
     if (typeof amount !== "number" || !(amount > 0)) return c;
+    moneyInteger(amount, "opening amount");
     const held = balanceOf(c);
     entries.push({ catId: c.id, before: held, amount, after: held + amount });
     return { ...c, envelopeBalance: held + amount };
@@ -260,6 +299,7 @@ export function applyOpeningBalances({ categories, unallocatedBalance }, amounts
  * them for the log entry, which is what that entry has always stored.
  */
 export function reconcileLedger({ categories, unallocatedBalance }) {
+  validateLedger({ categories, unallocatedBalance });
   const isNonSavings = (c) => c.type === "expense" && !c.isAccumulating;
   const movements = [];
 
@@ -296,7 +336,7 @@ export function reconcileLedger({ categories, unallocatedBalance }) {
 
   const returned = pool;
   return {
-    ledger: { categories: next, unallocatedBalance: unallocatedBalance + returned },
+    ledger: validateLedger({ categories: next, unallocatedBalance: unallocatedBalance + returned }),
     movements,
     pooled,
     toppedUp,
@@ -319,13 +359,14 @@ export function reconcileLedger({ categories, unallocatedBalance }) {
  * Returns the new ledger and `released` — signed, for the caller to explain.
  */
 export function removeEnvelope({ categories, unallocatedBalance }, catId) {
+  validateLedger({ categories, unallocatedBalance });
   const cat = categories.find((c) => c.id === catId);
   const released = cat ? balanceOf(cat) : 0;
   return {
-    ledger: {
+    ledger: validateLedger({
       categories: categories.filter((c) => c.id !== catId),
       unallocatedBalance: unallocatedBalance + released,
-    },
+    }),
     released,
   };
 }

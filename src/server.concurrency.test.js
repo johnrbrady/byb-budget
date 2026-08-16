@@ -19,7 +19,7 @@ function freePort() {
   });
 }
 
-function request(port, method, route, body, token) {
+function request(port, method, route, body, token, extraHeaders = {}) {
   const payload = body === undefined ? null : JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -30,6 +30,7 @@ function request(port, method, route, body, token) {
       headers: {
         ...(payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...extraHeaders,
       },
     }, (res) => {
       let text = "";
@@ -78,6 +79,7 @@ test("a stale second session gets 409 without changing data or dataVersion", asy
       BYB_DATA_DIR: dataDir,
       BYB_PORT: String(port),
       BYB_BCRYPT_ROUNDS: "4",
+      BYB_API_KEY: "test-api-key",
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -113,6 +115,29 @@ test("a stale second session gets 409 without changing data or dataVersion", asy
     expect(afterReject.status).toBe(200);
     expect(afterReject.body.unallocatedBalance).toBe(11);
     expect(afterReject.body.dataVersion).toBe(1);
+
+    const centsView = await request(port, "GET", "/api/data", undefined, firstLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(centsView.status).toBe(200);
+    expect(centsView.body).toMatchObject({ moneyScale: 100, unallocatedBalance: 1100, dataVersion: 1 });
+
+    const centsSave = await request(
+      port,
+      "POST",
+      "/api/data",
+      { ...centsView.body, unallocatedBalance: 1234 },
+      firstLogin.body.token,
+      { "X-BYB-Money-Scale": "100" }
+    );
+    expect(centsSave).toMatchObject({ status: 200, body: { dataVersion: 2 } });
+
+    const legacyView = await request(port, "GET", "/api/data", undefined, firstLogin.body.token);
+    expect(legacyView.body).toMatchObject({ unallocatedBalance: 12.34, dataVersion: 2 });
+    expect(legacyView.body).not.toHaveProperty("moneyScale");
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, "budget.json"), "utf8"))).toMatchObject({ moneyScale: 100, unallocatedBalance: 1234, dataVersion: 2 });
+
+    const summary = await request(port, "GET", "/api/integrations/summary", undefined, undefined, { "X-API-Key": "test-api-key" });
+    expect(summary.status).toBe(200);
+    expect(summary.body).toMatchObject({ unallocatedBalance: 12.34, totalInEnvelopes: 0, monthIncome: 0, monthExpenses: 0, monthNet: 0 });
   } finally {
     child.kill();
     fs.rmSync(dataDir, { recursive: true, force: true });

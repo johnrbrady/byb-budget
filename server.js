@@ -7,6 +7,8 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { MONEY_SCALE, MONEY_SCALE_HEADER, assertCentsDocument, centsToDollars, reconcileEntryToDollars, toCentsDocument, toDollarsDocument } from "./money-schema.js";
+import { migrateMoneyFile, publicInspection } from "./money-file.js";
 
 // ── Config via env vars (with sensible defaults) ────────────────────────────
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -105,12 +107,21 @@ if (!fs.existsSync(DATA_FILE)) {
       assets: [],
       transfers: [],
       reconcileLog: [],
+      unallocatedBalance: 0,
+      moneyScale: MONEY_SCALE,
       dataVersion: 0,
     }, null, 2)
   );
 }
 if (!fs.existsSync(PASSWORDS_FILE)) fs.writeFileSync(PASSWORDS_FILE, JSON.stringify({}, null, 2));
 if (!fs.existsSync(SESSIONS_FILE)) fs.writeFileSync(SESSIONS_FILE, JSON.stringify({}, null, 2));
+
+// Money is migrated before the first request can be served. The migration is
+// explicit-path, idempotent, atomic, and leaves a sibling pre-cents recovery
+// file. A stale pre-migration tab is forced through the normal dataVersion 409
+// path and receives a dollar-compatible document on its next legacy GET.
+const moneyMigration = migrateMoneyFile(DATA_FILE);
+console.log("Money schema:", JSON.stringify(publicInspection(moneyMigration)));
 
 // ── File helpers ────────────────────────────────────────────────────────────
 function readJSON(file) {
@@ -203,7 +214,7 @@ function validateBudgetData(data) {
   // `adjustments` before it ever reached a deployed instance. Current clients
   // never send it, but it stays accepted so that a client still running the
   // build that wrote it is not met with a 400 on every save.
-  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "adjustments", "openingBalances", "dataVersion"];
+  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "adjustments", "openingBalances", "moneyScale", "dataVersion"];
   for (const key of Object.keys(data)) {
     if (!allowed.includes(key)) return `Unknown field: ${key}`;
   }
@@ -222,6 +233,7 @@ function validateBudgetData(data) {
   if (data.dataVersion !== undefined && typeof data.dataVersion !== "number") {
     return "dataVersion must be a number";
   }
+  if (data.moneyScale !== MONEY_SCALE) return `moneyScale must be ${MONEY_SCALE}`;
   // Size guard — prevent unreasonably large payloads
   const txCount = (data.transactions || []).length;
   const catCount = (data.categories || []).length;
@@ -365,7 +377,10 @@ app.get("/api/data", requireAuth, (req, res) => {
     // Migrate-on-read: older data files have no version or reconcile log
     if (typeof data.dataVersion !== "number") data.dataVersion = 0;
     if (!Array.isArray(data.reconcileLog)) data.reconcileLog = [];
-    res.json(data);
+    const requestedScale = req.headers[MONEY_SCALE_HEADER];
+    if (requestedScale === undefined) return res.json(toDollarsDocument(data));
+    if (requestedScale !== String(MONEY_SCALE)) return res.status(400).json({ error: "Unsupported money scale" });
+    res.json(assertCentsDocument(data));
   } catch {
     res.status(500).json({ error: "Could not read data" });
   }
@@ -376,19 +391,33 @@ app.get("/api/data", requireAuth, (req, res) => {
 // since, versions no longer match and the write is rejected with 409 so the
 // stale client can reload instead of silently overwriting newer data.
 app.post("/api/data", requireAuth, (req, res) => {
-  const error = validateBudgetData(req.body);
+  let submitted;
+  try {
+    const requestedScale = req.headers[MONEY_SCALE_HEADER];
+    if (requestedScale === undefined) {
+      if (req.body?.moneyScale !== undefined) return res.status(400).json({ error: "Money scale header is required when moneyScale is declared" });
+      submitted = toCentsDocument(req.body);
+    } else if (requestedScale === String(MONEY_SCALE)) {
+      submitted = assertCentsDocument(req.body);
+    } else {
+      return res.status(400).json({ error: "Unsupported money scale" });
+    }
+  } catch (conversionError) {
+    return res.status(400).json({ error: conversionError.message });
+  }
+  const error = validateBudgetData(submitted);
   if (error) return res.status(400).json({ error });
   try {
     const current = readJSON(DATA_FILE);
     const currentVersion = typeof current.dataVersion === "number" ? current.dataVersion : 0;
-    const clientVersion = typeof req.body.dataVersion === "number" ? req.body.dataVersion : 0;
+    const clientVersion = typeof submitted.dataVersion === "number" ? submitted.dataVersion : 0;
     if (clientVersion !== currentVersion) {
       return res.status(409).json({
         error: "Data has changed since you loaded it — reloading latest",
         dataVersion: currentVersion,
       });
     }
-    const next = { ...req.body, dataVersion: currentVersion + 1 };
+    const next = { ...submitted, moneyScale: MONEY_SCALE, dataVersion: currentVersion + 1 };
     fs.writeFileSync(DATA_FILE, JSON.stringify(next, null, 2));
     res.json({ ok: true, dataVersion: next.dataVersion });
   } catch {
@@ -421,25 +450,32 @@ app.get("/api/integrations/summary", requireApiKey, (req, res) => {
     const upcomingBills = recurring
       .filter((r) => r.nextDueDate <= sevenDays)
       .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate))
-      .map((r) => ({ label: r.label, amount: r.amount, type: r.type, dueDate: r.nextDueDate, overdue: r.nextDueDate <= today }));
+      .map((r) => ({ label: r.label, amount: centsToDollars(r.amount || 0), type: r.type, dueDate: r.nextDueDate, overdue: r.nextDueDate <= today }));
 
     const envelopes = categories
       .filter((c) => c.type === "expense")
       .map((c) => ({ name: c.name, balance: c.envelopeBalance || 0, base: c.baseAmount || 0, accumulating: !!c.isAccumulating }));
 
+    const totalInEnvelopes = envelopes.reduce((sum, envelope) => sum + envelope.balance, 0);
+    const dollarEnvelopes = envelopes.map((envelope) => ({
+      ...envelope,
+      balance: centsToDollars(envelope.balance),
+      base: centsToDollars(envelope.base),
+    }));
+
     res.json({
       generatedAt: now.toISOString(),
       month,
-      unallocatedBalance: data.unallocatedBalance || 0,
-      totalInEnvelopes: envelopes.reduce((s, e) => s + e.balance, 0),
-      monthIncome,
-      monthExpenses,
-      monthNet: monthIncome - monthExpenses,
-      envelopes,
-      lowEnvelopes: envelopes.filter((e) => e.base > 0 && e.balance < e.base * 0.2).map((e) => e.name),
+      unallocatedBalance: centsToDollars(data.unallocatedBalance || 0),
+      totalInEnvelopes: centsToDollars(totalInEnvelopes),
+      monthIncome: centsToDollars(monthIncome),
+      monthExpenses: centsToDollars(monthExpenses),
+      monthNet: centsToDollars(monthIncome - monthExpenses),
+      envelopes: dollarEnvelopes,
+      lowEnvelopes: envelopes.filter((e) => e.base > 0 && e.balance * 5 < e.base).map((e) => e.name),
       upcomingBills,
-      netWorth: assets.reduce((s, a) => s + (a.value || 0), 0),
-      lastReconcile: reconcileLog.length > 0 ? reconcileLog[0] : null,
+      netWorth: centsToDollars(assets.reduce((s, a) => s + (a.value || 0), 0)),
+      lastReconcile: reconcileLog.length > 0 ? reconcileEntryToDollars(reconcileLog[0]) : null,
       transactionCount: transactions.length,
     });
   } catch {
@@ -454,10 +490,13 @@ app.post("/api/events/reconcile", requireAuth, async (req, res) => {
   res.json({ ok: true, webhook: !!WEBHOOK_URL });
   if (!WEBHOOK_URL) return;
   try {
+    const requestedScale = req.headers[MONEY_SCALE_HEADER];
+    if (requestedScale !== undefined && requestedScale !== String(MONEY_SCALE)) throw new Error("Unsupported money scale");
+    const entry = requestedScale === String(MONEY_SCALE) ? reconcileEntryToDollars(req.body || {}) : (req.body || {});
     await fetch(WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event: "reconcile", entry: req.body || {}, at: new Date().toISOString() }),
+      body: JSON.stringify({ event: "reconcile", entry, at: new Date().toISOString() }),
     });
   } catch (e) {
     console.warn("Reconcile webhook failed:", e.message);

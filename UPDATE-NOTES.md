@@ -1,8 +1,21 @@
 # BYB! v0.7 — Update Notes
 
-This is a non-destructive update. Existing `data/budget.json`, `passwords.json`
-and `sessions.json` keep working unchanged. New fields are added with safe
-defaults the first time the app saves.
+## Current production upgrade
+
+- Monetary values are migrated once from decimal dollars to exact integer
+  cents (`moneyScale: 100`) before the server accepts requests.
+- The original file is retained as a hash-named pre-cents recovery copy and
+  the migration is atomic, validated, idempotent, and available in dry-run
+  mode with `npm run money:dry-run -- <budget.json>`.
+- Forms reject more than two decimal places; XLSX imports round to the nearest
+  cent and report that rounding. XLSX exports and external integrations remain
+  dollar-valued.
+- Concurrent-save conflicts retain the losing person's unsaved screen and
+  require an explicit discard-and-reload choice; no stale snapshot is retried.
+
+The v0.7 notes below describe the earlier release. The current upgrade changes
+`budget.json` money values to cents on first server start and retains the exact
+pre-cents file for recovery. `passwords.json` and `sessions.json` are unchanged.
 
 ## How to apply the update
 
@@ -21,8 +34,8 @@ npm run server     # serves the built app + API on :3001
 
 or use Docker (see README → Deployment).
 
-**No action needed for existing users.** Logins, passwords, balances,
-transactions and history are preserved. Each user may see the welcome screen
+**Existing users keep their data.** Logins, passwords, balances, transactions
+and history are preserved. Each user may see the welcome screen
 at most once more (on devices that had never dismissed it); after that the
 "seen" flag is stored on their account, not the browser.
 

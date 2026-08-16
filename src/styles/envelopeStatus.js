@@ -20,7 +20,7 @@ export const STATUS_OVER = "over";   // overdrawn
 
 export function envelopeStatus(balance, base) {
   if (balance < 0) return STATUS_OVER;
-  if (base > 0 && balance < base * 0.2) return STATUS_LOW;
+  if (base > 0 && balance * 5 < base) return STATUS_LOW;
   return STATUS_OK;
 }
 

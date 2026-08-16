@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD } from "../lib/utils.js";
+import { centsToInput, fmtAUD, parseAUDToCents } from "../lib/utils.js";
 import { IconZap, IconEdit } from "./Icons.jsx";
 
 export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) {
@@ -12,16 +12,17 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
   const [manualAmounts, setManualAmounts] = useState(() => Object.fromEntries(expCats.map((c) => [c.id, ""])));
   const mobile = styles.isMobile;
 
-  const parsedIncome = parseFloat(income) || 0;
+  const parseInput = (value) => { try { return parseAUDToCents(value); } catch { return null; } };
+  const parsedIncome = parseInput(income) || 0;
 
   const applySuggestions = (incomeVal) => {
-    const inc = parseFloat(incomeVal) || 0;
+    const inc = parseInput(incomeVal) || 0;
     if (inc <= 0) return;
-    setAutoAmounts(Object.fromEntries(expCats.map((c) => [c.id, String(Math.round(inc * ((c.suggestedPct || 0) / 100)))])));
+    setAutoAmounts(Object.fromEntries(expCats.map((c) => [c.id, centsToInput(Math.round(inc * ((c.suggestedPct || 0) / 100)))])));
   };
 
-  const autoTotal = expCats.reduce((s, c) => s + (parseFloat(autoAmounts[c.id]) || 0), 0);
-  const manualTotal = expCats.reduce((s, c) => s + (parseFloat(manualAmounts[c.id]) || 0), 0);
+  const autoTotal = expCats.reduce((s, c) => s + (parseInput(autoAmounts[c.id]) || 0), 0);
+  const manualTotal = expCats.reduce((s, c) => s + (parseInput(manualAmounts[c.id]) || 0), 0);
   const overBudget = (total) => parsedIncome > 0 && total > parsedIncome;
 
   const overBudgetBanner = (total) => (
@@ -85,7 +86,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
                   </span>
                   <input
                     style={{ ...styles.input, width: 88, textAlign: "right", padding: "4px 8px", fontSize: 13 }}
-                    type="number" step="1" min="0"
+                    type="number" step="0.01" min="0"
                     value={autoAmounts[c.id] || ""}
                     onChange={(e) => setAutoAmounts((prev) => ({ ...prev, [c.id]: e.target.value }))}
                   />
@@ -104,7 +105,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
         )}
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button style={{ ...styles.button, flex: 1 }} onClick={() => onComplete(Object.fromEntries(expCats.map((c) => [c.id, parseFloat(autoAmounts[c.id]) || 0])))} disabled={parsedIncome <= 0 || overBudget(autoTotal)}>Apply</button>
+          <button style={{ ...styles.button, flex: 1 }} onClick={() => onComplete(Object.fromEntries(expCats.map((c) => [c.id, parseInput(autoAmounts[c.id]) || 0])))} disabled={parsedIncome <= 0 || overBudget(autoTotal)}>Apply</button>
           <button style={styles.buttonGhost} onClick={() => setMode(null)}>Back</button>
         </div>
       </div>
@@ -143,7 +144,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
           type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00"
           value={manualAmounts[cur.id] || ""} autoFocus
           onChange={(e) => setManualAmounts((prev) => ({ ...prev, [cur.id]: e.target.value }))}
-          onKeyDown={(e) => { if (e.key === "Enter") { isLast ? onComplete(Object.fromEntries(expCats.map((c) => [c.id, parseFloat(manualAmounts[c.id]) || 0]))) : setStep((s) => s + 1); } }}
+          onKeyDown={(e) => { if (e.key === "Enter") { isLast ? onComplete(Object.fromEntries(expCats.map((c) => [c.id, parseInput(manualAmounts[c.id]) || 0]))) : setStep((s) => s + 1); } }}
         />
 
         {parsedIncome > 0 && (
@@ -160,7 +161,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
         <div style={{ display: "flex", gap: 8 }}>
           {step > 0 && <button style={styles.buttonGhost} onClick={() => setStep((s) => s - 1)}>Back</button>}
           {!isLast && <button style={{ ...styles.button, flex: 1 }} onClick={() => setStep((s) => s + 1)}>Next</button>}
-          {isLast && <button style={{ ...styles.button, flex: 1 }} onClick={() => onComplete(Object.fromEntries(expCats.map((c) => [c.id, parseFloat(manualAmounts[c.id]) || 0])))}>Finish</button>}
+          {isLast && <button style={{ ...styles.button, flex: 1 }} onClick={() => onComplete(Object.fromEntries(expCats.map((c) => [c.id, parseInput(manualAmounts[c.id]) || 0])))}>Finish</button>}
           {step === 0 && <button style={{ ...styles.buttonGhost, fontSize: 12 }} onClick={() => setMode(null)}>Mode</button>}
         </div>
       </div>

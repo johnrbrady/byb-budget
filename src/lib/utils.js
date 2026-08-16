@@ -1,7 +1,11 @@
+import { MONEY_SCALE, centsToInput, parseAUDToCents, parseImportedAUDToCents } from "../../money-schema.js";
+
 export const uid = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "id-" + Math.random().toString(36).slice(2, 10));
 
-export const fmtAUD = (n) => new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n || 0);
+export const fmtAUD = (cents) => new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format((cents || 0) / MONEY_SCALE);
+
+export { centsToInput, parseAUDToCents, parseImportedAUDToCents };
 
 export const monthKey = (iso) => (iso || "").slice(0, 7);
 

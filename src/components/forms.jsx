@@ -1,6 +1,10 @@
 import React, { useState } from "react";
 import { PALETTE, SAVINGS_CAT } from "../lib/constants.js";
-import { fmtAUD, todayISO } from "../lib/utils.js";
+import { centsToInput, fmtAUD, parseAUDToCents, todayISO } from "../lib/utils.js";
+
+const inputCents = (value, options) => {
+  try { return parseAUDToCents(value, options); } catch { return null; }
+};
 
 // `style` overrides the form's own container styling only — it is there so the
 // same form can be a card in the page or the body of a bottom sheet without a
@@ -17,7 +21,7 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
   const existingAllocations = tx?.type === "income" && Array.isArray(tx.allocations) ? tx.allocations : [];
   const [form, setForm] = useState(
     tx
-      ? { ...tx, allocatedEnvelopeId: existingAllocations.length === 1 ? existingAllocations[0].catId : "" }
+      ? { ...tx, amount: centsToInput(tx.amount), allocatedEnvelopeId: existingAllocations.length === 1 ? existingAllocations[0].catId : "" }
       : {
         date: todayISO(),
         amount: "",
@@ -40,11 +44,12 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
     : null;
   // Editing the amount below the split total is legal but scales the split down,
   // so warn on the way rather than surprising the user after the save.
+  const parsedFormAmount = inputCents(form.amount) || 0;
   const splitOverAmount = !!splitAllocations &&
-    splitAllocations.reduce((s, a) => s + a.amount, 0) > (parseFloat(form.amount) || 0) + 0.005;
+    splitAllocations.reduce((s, a) => s + a.amount, 0) > parsedFormAmount;
   const submit = (e) => {
     e.preventDefault();
-    const amount = parseFloat(form.amount);
+    const amount = inputCents(form.amount);
     if (!amount || amount <= 0) return;
     if (form.type === "transfer") {
       if (!form.fromCatId || !form.toCatId || form.fromCatId === form.toCatId) return;
@@ -105,7 +110,7 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
                   ))}
                   <span style={{ color: splitOverAmount ? "var(--byb-over)" : styles.textMuted, fontSize: 11 }}>
                     {splitOverAmount
-                      ? `Split exceeds the amount — it will be scaled down to ${fmtAUD(parseFloat(form.amount) || 0)}`
+                      ? `Split exceeds the amount — it will be scaled down to ${fmtAUD(parsedFormAmount)}`
                       : "Split kept as is · change it in Add Income"}
                   </span>
                 </div>
@@ -136,7 +141,7 @@ export function AddAmountForm({ categories, onSave, onCancel, styles }) {
   const mobile = styles.isMobile;
   const submit = (e) => {
     e.preventDefault();
-    const amt = parseFloat(amount);
+    const amt = inputCents(amount);
     if (!amt || amt <= 0 || !catId) return;
     onSave(catId, amt, description);
   };
@@ -167,13 +172,14 @@ export function AddAmountForm({ categories, onSave, onCancel, styles }) {
 
 export function CatForm({ cat, onSave, onCancel, onDelete, styles }) {
   const [form, setForm] = useState(cat
-    ? { ...cat, baseAmount: cat.baseAmount ?? cat.monthlyBudget ?? "" }
+    ? { ...cat, baseAmount: centsToInput(cat.baseAmount ?? cat.monthlyBudget ?? 0) }
     : { name: "", type: "expense", colour: "#7FB069", baseAmount: "", isAccumulating: false, envelopeBalance: 0 }
   );
   const submit = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    const baseAmount = form.type === "expense" && form.baseAmount !== "" ? parseFloat(form.baseAmount) || 0 : 0;
+    const baseAmount = form.type === "expense" && form.baseAmount !== "" ? inputCents(form.baseAmount) : 0;
+    if (baseAmount === null) return;
     onSave({ ...form, baseAmount, monthlyBudget: baseAmount });
   };
   const mobile = styles.isMobile;
@@ -228,11 +234,11 @@ export function CatForm({ cat, onSave, onCancel, onDelete, styles }) {
 
 export function RuleForm({ rule, categories, users, activeUserId, onSave, onCancel, styles }) {
   const [form, setForm] = useState(
-    rule || { label: "", amount: "", type: "expense", categoryId: categories.find((c) => c.type === "expense")?.id || "", frequency: "monthly", startDate: todayISO(), nextDueDate: todayISO(), addedBy: activeUserId }
+    rule ? { ...rule, amount: centsToInput(rule.amount) } : { label: "", amount: "", type: "expense", categoryId: categories.find((c) => c.type === "expense")?.id || "", frequency: "monthly", startDate: todayISO(), nextDueDate: todayISO(), addedBy: activeUserId }
   );
   const submit = (e) => {
     e.preventDefault();
-    const amount = parseFloat(form.amount);
+    const amount = inputCents(form.amount);
     if (!amount || amount <= 0 || !form.label) return;
     onSave({ ...form, amount });
   };

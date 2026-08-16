@@ -9,7 +9,8 @@
     "start": "concurrently \"npm run dev\" \"npm run server\"",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "jest"
+    "test": "jest",
+    "money:dry-run": "node migrate-money.js --dry-run"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

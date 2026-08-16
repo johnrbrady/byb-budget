@@ -1,6 +1,15 @@
-import ExcelJS from "exceljs";
+import { centsToDollars, parseImportedAUDToCents } from "../money-schema.js";
+import { todayISO } from "./lib/utils.js";
 
-export async function exportToXlsx({ transactions, categories, users, recurring }) {
+const loadExcelJS = async () => {
+  const module = process.env.NODE_ENV === "test"
+    ? await import("exceljs/dist/exceljs.js")
+    : await import("exceljs");
+  return module.default || module;
+};
+
+export async function buildExportWorkbook({ transactions, categories, users, recurring }) {
+  const ExcelJS = await loadExcelJS();
   const categoriesById = Object.fromEntries(categories.map((c) => [c.id, c]));
   const usersById = Object.fromEntries(users.map((u) => [u.id, u]));
 
@@ -8,7 +17,7 @@ export async function exportToXlsx({ transactions, categories, users, recurring 
     id: t.id,
     date: t.date,
     type: t.type,
-    amount: t.amount,
+    amount: centsToDollars(t.amount),
     categoryName: categoriesById[t.categoryId]?.name || "",
     categoryId: t.categoryId,
     description: t.description || "",
@@ -28,16 +37,16 @@ export async function exportToXlsx({ transactions, categories, users, recurring 
     byCat[name].count += 1;
   });
   const summaryRows = [
-    { metric: "Total income", value: income },
-    { metric: "Total expenses", value: expenses },
-    { metric: "Net", value: income - expenses },
+    { metric: "Total income", value: centsToDollars(income) },
+    { metric: "Total expenses", value: centsToDollars(expenses) },
+    { metric: "Net", value: centsToDollars(income - expenses) },
     { metric: "Transaction count", value: transactions.length },
     { metric: "Category count", value: categories.length },
     { metric: "Recurring rule count", value: recurring.length },
     { metric: "Exported at", value: new Date().toISOString() },
     {},
     { metric: "Category breakdown (expenses)" },
-    ...Object.entries(byCat).map(([name, v]) => ({ metric: name, value: v.total, count: v.count })),
+    ...Object.entries(byCat).map(([name, v]) => ({ metric: name, value: centsToDollars(v.total), count: v.count })),
   ];
 
   const wb = new ExcelJS.Workbook();
@@ -56,12 +65,17 @@ export async function exportToXlsx({ transactions, categories, users, recurring 
   ];
   sumSheet.addRows(summaryRows);
 
+  return wb;
+}
+
+export async function exportToXlsx(payload) {
+  const wb = await buildExportWorkbook(payload);
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `budget-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.download = `budget-${todayISO()}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -69,12 +83,13 @@ export async function exportToXlsx({ transactions, categories, users, recurring 
 }
 
 export async function importFromXlsx(file, { categories, users }) {
+  const ExcelJS = await loadExcelJS();
   const buf = await file.arrayBuffer();
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf);
 
   const sheet = wb.getWorksheet("Transactions") || wb.worksheets[0];
-  if (!sheet) return { added: [], skipped: 0 };
+  if (!sheet) return { added: [], skipped: 0, rounded: 0 };
 
   // Read header row
   const headers = {};
@@ -97,10 +112,13 @@ export async function importFromXlsx(file, { categories, users }) {
 
   const added = [];
   let skipped = 0;
+  let rounded = 0;
 
   rows.forEach((r) => {
     const date = r.date || "";
-    const amount = parseFloat(r.amount);
+    let imported;
+    try { imported = parseImportedAUDToCents(r.amount); } catch { skipped++; return; }
+    const amount = imported.cents;
     const type = (r.type || "").toLowerCase();
     if (!date || !amount || amount <= 0 || (type !== "income" && type !== "expense")) { skipped++; return; }
 
@@ -118,6 +136,7 @@ export async function importFromXlsx(file, { categories, users }) {
     }
     if (!addedBy || !userById.has(addedBy)) { skipped++; return; }
 
+    if (imported.rounded) rounded++;
     added.push({
       id: r.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "id-" + Math.random().toString(36).slice(2, 10)),
       date: String(date),
@@ -132,5 +151,5 @@ export async function importFromXlsx(file, { categories, users }) {
     });
   });
 
-  return { added, skipped };
+  return { added, skipped, rounded };
 }

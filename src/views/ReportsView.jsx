@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD, monthKey, todayISO, formatMonth } from "../lib/utils.js";
+import { centsToInput, fmtAUD, monthKey, parseAUDToCents, todayISO, formatMonth } from "../lib/utils.js";
 import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { PieChart } from "../components/PieChart.jsx";
 import { CategorySpendingTrends } from "../components/CategorySpendingTrends.jsx";
@@ -10,9 +10,12 @@ import { IconHistory, IconWallet } from "../components/Icons.jsx";
 function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
+  const commit = () => {
+    try { onSetUnallocated(parseAUDToCents(val, { allowNegative: true })); setEditing(false); } catch {}
+  };
   if (!editing) {
     return (
-      <button style={{ ...styles.buttonGhost, whiteSpace: "nowrap" }} onClick={() => { setVal(String(unallocatedBalance)); setEditing(true); }}>
+      <button style={{ ...styles.buttonGhost, whiteSpace: "nowrap" }} onClick={() => { setVal(centsToInput(unallocatedBalance)); setEditing(true); }}>
         Edit Unallocated ({fmtAUD(unallocatedBalance)})
       </button>
     );
@@ -21,8 +24,8 @@ function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
       <input style={{ ...styles.input, width: 120 }} type="number" step="0.01" inputMode="decimal" value={val} autoFocus
         onChange={(e) => setVal(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") { const v = parseFloat(val); if (!isNaN(v)) { onSetUnallocated(v); setEditing(false); } } if (e.key === "Escape") setEditing(false); }} />
-      <button style={styles.button} onClick={() => { const v = parseFloat(val); if (!isNaN(v)) { onSetUnallocated(v); setEditing(false); } }}>Set</button>
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }} />
+      <button style={styles.button} onClick={commit}>Set</button>
       <button style={styles.buttonGhost} onClick={() => setEditing(false)}>Cancel</button>
     </div>
   );
@@ -282,11 +285,12 @@ My transactions and bank statement:
   const [assetValue, setAssetValue] = useState("");
 
   const openNewAsset = () => { setAssetForm({}); setAssetName(""); setAssetValue(""); };
-  const openEditAsset = (a) => { setAssetForm(a); setAssetName(a.name); setAssetValue(String(a.value)); };
+  const openEditAsset = (a) => { setAssetForm(a); setAssetName(a.name); setAssetValue(centsToInput(a.value)); };
   const closeAssetForm = () => { setAssetForm(null); setAssetName(""); setAssetValue(""); };
   const submitAsset = () => {
-    const v = parseFloat(assetValue);
-    if (!assetName.trim() || isNaN(v)) return;
+    let v;
+    try { v = parseAUDToCents(assetValue, { allowNegative: true }); } catch { return; }
+    if (!assetName.trim()) return;
     onSaveAsset({ ...assetForm, name: assetName.trim(), value: v });
     closeAssetForm();
   };

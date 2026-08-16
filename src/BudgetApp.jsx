@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
 import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
+import { MONEY_SCALE, parseImportedAUDToCents, reconcileEntryToDollars, toCentsDocument, toDollarsDocument } from "../money-schema.js";
 import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger, applyOpeningBalances, applyResetBalances, applySetUnallocated, householdTotal } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
 import { useIsMobile } from "./hooks/useIsMobile.js";
@@ -21,12 +22,18 @@ const INCOME_COLOURS = ["#A0B894", "#8FA876", "#6B9559", "#7FB069", "#5F8A4F"];
 // How far the unallocated balance may be moved by hand before the app asks
 // first. See setUnallocatedManually for why there is a line at all, and why it
 // is here rather than lower.
-const UNALLOCATED_CONFIRM_AT = 100;
+const UNALLOCATED_CONFIRM_AT = 10_000;
 
 export default function BudgetApp({ onImport, onExport, onSave, onReload, initialData } = {}) {
-  const initUsers = initialData?.users?.length ? initialData.users : DEFAULT_USERS;
+  // The production API returns integer cents. Legacy-shaped data is still
+  // accepted at this boundary for old exports and the frozen regression suite;
+  // it is converted once before any domain arithmetic and converted back only
+  // when calling a legacy-shaped onSave consumer.
+  const legacyInput = !!initialData && initialData.moneyScale !== MONEY_SCALE;
+  const sourceData = legacyInput ? toCentsDocument(initialData, { rejectUnexpected: false }) : initialData;
+  const initUsers = sourceData?.users?.length ? sourceData.users : DEFAULT_USERS;
   // Normalise categories: add envelope fields if missing (backward-compat migration)
-  const rawCats = (initialData?.categories?.length ? initialData.categories : DEFAULT_CATEGORIES).map((c) => ({
+  const rawCats = (sourceData?.categories?.length ? sourceData.categories : DEFAULT_CATEGORIES).map((c) => ({
     envelopeBalance: 0,
     isAccumulating: false,
     baseAmount: c.monthlyBudget || 0,
@@ -38,9 +45,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   let initCategories = rawCats;
   if (!initCategories.some((c) => c.id === INCIDENTALS_CAT.id)) initCategories = [...initCategories, INCIDENTALS_CAT];
   if (!initCategories.some((c) => c.id === SAVINGS_CAT.id)) initCategories = [...initCategories, SAVINGS_CAT];
-  const initRecurring = initialData?.recurring?.length ? initialData.recurring : [];
-  const initTransactions = initialData?.transactions?.length ? initialData.transactions : [];
-  const initUnallocated = initialData?.unallocatedBalance || 0;
+  const initRecurring = sourceData?.recurring?.length ? sourceData.recurring : [];
+  const initTransactions = sourceData?.transactions?.length ? sourceData.transactions : [];
+  const initUnallocated = sourceData?.unallocatedBalance || 0;
 
   // ALL hooks must come before any conditional return
   const [authToken, setAuthToken] = useState(() => localStorage.getItem("byb_token") || "");
@@ -53,9 +60,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const [unallocatedBalance, setUnallocatedBalance] = useState(initUnallocated);
   const [recurring, setRecurring] = useState(initRecurring);
   const [transactions, setTransactions] = useState(initTransactions);
-  const [assets, setAssets] = useState(initialData?.assets?.length ? initialData.assets : []);
-  const [transfers, setTransfers] = useState(initialData?.transfers?.length ? initialData.transfers : []);
-  const [reconcileLog, setReconcileLog] = useState(Array.isArray(initialData?.reconcileLog) ? initialData.reconcileLog : []);
+  const [assets, setAssets] = useState(sourceData?.assets?.length ? sourceData.assets : []);
+  const [transfers, setTransfers] = useState(sourceData?.transfers?.length ? sourceData.transfers : []);
+  const [reconcileLog, setReconcileLog] = useState(Array.isArray(sourceData?.reconcileLog) ? sourceData.reconcileLog : []);
   // Every deliberate change to the household total that is not a transaction:
   // opening the envelopes at setup, resetting all balances, setting unallocated
   // by hand. One log rather than three, because they are one question — "what
@@ -72,9 +79,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   // next save. A file that has neither is simply a household with no
   // adjustments yet.
   const [adjustments, setAdjustments] = useState(() => {
-    if (Array.isArray(initialData?.adjustments)) return initialData.adjustments;
-    if (Array.isArray(initialData?.openingBalances)) {
-      return initialData.openingBalances.map((e) => ({ ...e, kind: "opening", amount: e.amount ?? e.total }));
+    if (Array.isArray(sourceData?.adjustments)) return sourceData.adjustments;
+    if (Array.isArray(sourceData?.openingBalances)) {
+      return sourceData.openingBalances.map((e) => ({ ...e, kind: "opening", amount: e.amount ?? e.total }));
     }
     return [];
   });
@@ -242,7 +249,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setTimeout(() => setToast(null), 2400);
   };
 
-  const persist = (patch) => onSave?.({ transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments, ...patch });
+  const persist = (patch) => {
+    const document = { transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments, ...patch, moneyScale: MONEY_SCALE };
+    onSave?.(legacyInput ? toDollarsDocument(document) : document);
+  };
 
   // The envelope arithmetic itself lives in lib/money.js. This component holds
   // the state and decides what to ask the user; it does not do the sums.
@@ -359,7 +369,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     const { cat, base, amount, shortfall } = envelopeFillPlan(ledger(), catId);
     if (!cat || base <= 0) { showToast("Set a base amount first"); return; }
     if (amount <= 0) { showToast(`${cat.name} is already full`); return; }
-    if (shortfall > 0.01) {
+    if (shortfall > 0) {
       const ok = await askConfirm({
         title: "Top up from Unallocated?",
         message: `Filling ${cat.name} needs ${fmtAUD(amount)} but only ${fmtAUD(unallocatedBalance)} is unallocated. This will leave Unallocated at ${fmtAUD(unallocatedBalance - amount)}.`,
@@ -379,7 +389,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const transferEnvelope = async (fromId, toId, amount, description) => {
     const from = categories.find((c) => c.id === fromId);
     const available = from?.envelopeBalance || 0;
-    if (amount - available > 0.01) {
+    if (amount > available) {
       const ok = await askConfirm({
         title: "Transfer more than the envelope holds?",
         message: `${from?.name || "That envelope"} holds ${fmtAUD(available)} but this transfer moves ${fmtAUD(amount)}. This will leave it at ${fmtAUD(available - amount)}.`,
@@ -415,7 +425,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       return s + (c.isAccumulating ? base : (base - (c.envelopeBalance || 0)));
     }, 0);
     const netDraw = totalFillNeeded - totalIncome;
-    if (netDraw > 0.01) {
+    if (netDraw > 0) {
       const ok = await askConfirm({
         title: "Top up from Unallocated?",
         message: `Filling all envelopes will draw ${fmtAUD(netDraw)} from your existing unallocated balance (${fmtAUD(unallocatedBalance)} available).`,
@@ -529,9 +539,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       date: todayISO(),
       at: new Date().toISOString(),
       userId: activeUserId,
-      pooled: Math.round(totalPooled * 100) / 100,
+      pooled: totalPooled,
       toppedUp,
-      returned: Math.round(returned * 100) / 100,
+      returned,
       movements,
     };
     const newLog = [entry, ...reconcileLog].slice(0, 120); // keep last 120 runs
@@ -543,12 +553,12 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     fetch("/api/events/reconcile", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify(entry),
+      body: JSON.stringify(reconcileEntryToDollars(entry)),
     }).catch(() => {});
 
     let msg = `${fmtAUD(totalPooled)} redistributed`;
     if (toppedUp > 0) msg += ` · ${toppedUp} envelope${toppedUp !== 1 ? "s" : ""} topped up`;
-    if (returned > 0.01) msg += ` · ${fmtAUD(returned)} returned to unallocated`;
+    if (returned > 0) msg += ` · ${fmtAUD(returned)} returned to unallocated`;
     showToast(msg);
   };
 
@@ -648,9 +658,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     // before the user commits — including when the envelope is overdrawn, where
     // "returning" the balance means unallocated absorbs the shortfall.
     const balance = cat.envelopeBalance || 0;
-    const moneyNote = balance > 0.005
+    const moneyNote = balance > 0
       ? `\n\nThe ${fmtAUD(balance)} in this envelope will be returned to Unallocated.`
-      : balance < -0.005
+      : balance < 0
         ? `\n\nThis envelope is overdrawn by ${fmtAUD(-balance)}. That shortfall comes out of Unallocated, taking it to ${fmtAUD(unallocatedBalance + balance)}.`
         : "";
 
@@ -768,12 +778,16 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       const existing = new Set(transactions.map((t) => t.id));
       const incomeCatId = categories.find((c) => c.type === "income")?.id || "";
       const expenseCatId = categories.find((c) => c.type === "expense")?.id || "";
+      let rounded = 0;
       const valid = parsed
         .filter((t) => t.date && t.amount)
-        .map((t) => ({
+        .map((t) => {
+          const imported = parseImportedAUDToCents(Math.abs(Number(t.amount)));
+          if (imported.rounded) rounded++;
+          return ({
           id: t.id || uid(),
           date: t.date,
-          amount: Math.abs(parseFloat(t.amount) || 0),
+          amount: imported.cents,
           type: t.type === "income" ? "income" : "expense",
           categoryId: t.categoryId || (t.type === "income" ? incomeCatId : expenseCatId),
           description: t.description || "",
@@ -783,14 +797,14 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           imported: true,
           addedBy: t.addedBy || activeUserId,
           createdAt: t.createdAt || new Date().toISOString(),
-        }))
+        }); })
         .filter((t) => t.amount > 0 && !existing.has(t.id));
       if (valid.length === 0) { showToast("No new transactions found in the pasted data"); return false; }
       const next = valid.reduce((acc, tx) => applyTxEffect(acc, tx, 1), ledger());
       const newTx = [...valid, ...transactions];
       setTransactions(newTx);
       commitLedger(next, { transactions: newTx });
-      showToast(`Imported ${valid.length} transaction${valid.length !== 1 ? "s" : ""}`);
+      showToast(`Imported ${valid.length} transaction${valid.length !== 1 ? "s" : ""}${rounded ? ` · ${rounded} amount${rounded === 1 ? "" : "s"} rounded to cents` : ""}`);
       return true;
     } catch (e) {
       showToast("Import failed: " + (e.message || "Invalid JSON"));
@@ -810,7 +824,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
         const merged = [...transactions, ...newRows];
         setTransactions(merged);
         persist({ transactions: merged });
-        showToast(`Imported ${newRows.length} row(s)${result.skipped ? `, skipped ${result.skipped}` : ""}`);
+        showToast(`Imported ${newRows.length} row(s)${result.skipped ? `, skipped ${result.skipped}` : ""}${result.rounded ? `, rounded ${result.rounded}` : ""}`);
       }
     }).catch(() => showToast("Import failed"));
   };

@@ -19,10 +19,10 @@ const categories = [
 function renderTrends(extra = {}) {
   const props = {
     transactions: [
-      tx("g-apr", "2026-04-12", 80, "c-groceries"),
-      tx("g-may", "2026-05-12", 50, "c-groceries"),
-      tx("g-jun", "2026-06-12", 75, "c-groceries"),
-      tx("e-jun", "2026-06-14", 40, "c-electricity"),
+      tx("g-apr", "2026-04-12", 8000, "c-groceries"),
+      tx("g-may", "2026-05-12", 5000, "c-groceries"),
+      tx("g-jun", "2026-06-12", 7500, "c-groceries"),
+      tx("e-jun", "2026-06-14", 4000, "c-electricity"),
     ],
     categories,
     activeMonth: "2026-06",
@@ -53,7 +53,7 @@ describe("per-category spending trends", () => {
     const groceries = screen.getByTestId("category-spending-c-groceries");
     expect(within(groceries).getAllByTestId(/^spending-bar-/)).toHaveLength(12);
     expect(within(groceries).getByTestId("spending-bar-2025-07")).toHaveAttribute("data-value", "0");
-    expect(within(groceries).getByTestId("spending-bar-2026-06")).toHaveAttribute("data-value", "75");
+    expect(within(groceries).getByTestId("spending-bar-2026-06")).toHaveAttribute("data-value", "7500");
   });
 
   test("reveals categories progressively with a working non-observer fallback", () => {

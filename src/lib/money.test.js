@@ -90,6 +90,16 @@ describe("applyTxEffect", () => {
     expect(before.unallocatedBalance).toBe(50);
     expect(balanceOf(before, "a")).toBe(300);
   });
+
+  test("repeated 19.99 and 79.96 operations return to exactly zero cents", () => {
+    let ledger = ledgerOf(0, envelope("a", 0));
+    const income = { type: "income", amount: 1999, allocations: [] };
+    const spend = { type: "expense", categoryId: "a", amount: 7996 };
+    for (let index = 0; index < 12; index++) ledger = applyTxEffect(ledger, income, 1);
+    for (let index = 0; index < 3; index++) ledger = applyTxEffect(ledger, spend, 1);
+    expect(householdTotal(ledger)).toBe(0);
+    expect(ledger.unallocatedBalance + ledger.categories[0].envelopeBalance).toBe(0);
+  });
 });
 
 describe("allocationsForForm", () => {
@@ -142,6 +152,20 @@ describe("allocationsForForm", () => {
     const scaled = allocationsForForm({ type: "income", amount: 100, allocations: split }, 0);
     expect(scaled.reduce((s, a) => s + a.amount, 0)).toBe(100);
     expect(scaled.map((a) => a.catId)).toEqual(["a", "b", "c"]);
+  });
+
+  test("largest remainders distribute many tiny allocations without a negative last row", () => {
+    const split = Array.from({ length: 100 }, (_, index) => ({ catId: `c-${index}`, amount: 1 }));
+    const scaled = allocationsForForm({ type: "income", amount: 7, allocations: split }, 0);
+    expect(scaled.reduce((sum, allocation) => sum + allocation.amount, 0)).toBe(7);
+    expect(scaled.every((allocation) => allocation.amount >= 0)).toBe(true);
+    expect(scaled.slice(0, 7).every((allocation) => allocation.amount === 1)).toBe(true);
+    expect(scaled.slice(7).every((allocation) => allocation.amount === 0)).toBe(true);
+  });
+
+  test("a raw stored single allocation is preserved without form-only scaffolding", () => {
+    const stored = [{ catId: "a", amount: 300 }];
+    expect(allocationsForForm({ type: "income", amount: 300, allocations: stored }, 50)).toEqual(stored);
   });
 
   test("a split of one falls through to the select, so clearing it releases the money", () => {
@@ -493,12 +517,12 @@ describe("reconcileLedger", () => {
   });
 
   test("cents that do not divide evenly still balance to the last cent", () => {
-    const before = ledgerOf(0, envelope("a", 33.33), envelope("b", 12.11), envelope("c", -20.07));
+    const before = ledgerOf(0, envelope("a", 3333), envelope("b", 1211), envelope("c", -2007));
     const result = reconcileLedger(before);
 
     expect(result.toppedUp).toBe(1);
-    expect(balanceOf(result.ledger, "c")).toBeCloseTo(0, 10);
-    expect(result.returned).toBeCloseTo(25.37, 10); // 45.44 - 20.07
+    expect(balanceOf(result.ledger, "c")).toBe(0);
+    expect(result.returned).toBe(2537); // 45.44 - 20.07
     expectMovementsExplainLedger(before, result);
   });
 
@@ -620,11 +644,11 @@ describe("applyOpeningBalances", () => {
     expectEntriesExplainLedger(before, result);
   });
 
-  // Amounts are floats, as everywhere else in this module. The recorded total
-  // is stored unrounded precisely so it stays equal to the move it explains.
+  // Amounts are integer cents. The recorded total stays exactly equal to the
+  // move it explains.
   test("cents still add up to exactly what the household total moved by", () => {
     const before = ledgerOf(0, envelope("a", 0), envelope("b", 0), envelope("c", 0));
-    const result = applyOpeningBalances(before, { a: 33.33, b: 12.11, c: 0.07 });
+    const result = applyOpeningBalances(before, { a: 3333, b: 1211, c: 7 });
 
     expect(total(result.ledger) - total(before)).toBe(result.amount);
     expectEntriesExplainLedger(before, result);
@@ -773,8 +797,8 @@ describe("applySetUnallocated", () => {
   });
 
   test("cents survive: the recorded change is the change, not a rounded copy", () => {
-    const before = ledgerOf(250.15, envelope("a", 33.33));
-    const result = applySetUnallocated(before, 250.4);
+    const before = ledgerOf(25015, envelope("a", 3333));
+    const result = applySetUnallocated(before, 25040);
 
     expect(total(result.ledger) - total(before)).toBe(result.amount);
     expectRecordMatchesLedger(before, result);

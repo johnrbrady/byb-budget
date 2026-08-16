@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD } from "../lib/utils.js";
+import { centsToInput, fmtAUD, parseAUDToCents } from "../lib/utils.js";
 import { CatForm } from "../components/forms.jsx";
 import { FirstTimeFillWizard } from "../components/FirstTimeFillWizard.jsx";
 import { AnimatedCurrency } from "../components/AnimatedNumber.jsx";
@@ -187,11 +187,12 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
     return rules.length > 0 ? rules[0].amount : null;
   };
 
-  const totalFillAmount = incomeCats.reduce((s, c) => s + (parseFloat(fillAmounts[c.id] || 0) || 0), 0);
+  const parseInput = (value) => { try { return parseAUDToCents(value); } catch { return 0; } };
+  const totalFillAmount = incomeCats.reduce((s, c) => s + parseInput(fillAmounts[c.id] || "0"), 0);
 
   const applyAllIncomeFill = () => {
     const sources = incomeCats
-      .map((c) => ({ catId: c.id, amount: parseFloat(fillAmounts[c.id] || 0) || 0 }))
+      .map((c) => ({ catId: c.id, amount: parseInput(fillAmounts[c.id] || "0") }))
       .filter((s) => s.amount > 0);
     if (sources.length === 0) { return; }
     onFillWithIncome(sources);
@@ -269,7 +270,7 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
                       <div style={{ fontSize: 10, fontWeight: 600, color: styles.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>Recurring</div>
                       <button
                         style={{ ...styles.buttonGhost, fontSize: 12, padding: "7px 12px", borderColor: PALETTE.primary, color: PALETTE.primaryDeep }}
-                        onClick={() => setFillAmounts((prev) => ({ ...prev, [c.id]: String(recurringAmt) }))}
+                        onClick={() => setFillAmounts((prev) => ({ ...prev, [c.id]: centsToInput(recurringAmt) }))}
                       >
                         Stay Consistent ({fmtAUD(recurringAmt)})
                       </button>

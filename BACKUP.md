@@ -300,6 +300,14 @@ What it does, in order:
 Afterwards, tell the household to fully close and reopen the app rather than
 carry on in a tab that was open before the restore.
 
+### Restoring across the cents upgrade
+
+`moneyScale: 100` budget files require the cents-aware image. To roll back to a
+pre-upgrade image, restore the paired pre-upgrade scheduled backup (or the
+server-created `budget.pre-cents-<hash>.json` together with the matching
+password file), empty `sessions.json`, and only then start the old image. Do not
+mix a cents file with the old dollar-based image.
+
 ---
 
 ## Restore semantics — what actually happens
@@ -316,8 +324,9 @@ contents with the process untouched.
 **A browser holding a *newer* `dataVersion` cannot clobber the restore.**
 `POST /api/data` rejects any write whose `dataVersion` differs from the one on
 disk. A client that loaded at version 57 posting against a file restored to
-version 42 gets `409`, and `main.jsx` responds by reloading from the server and
-discarding its own in-memory state. This case is safe and self-healing.
+version 42 gets `409`. The app keeps that client's unsaved changes visible and
+requires an explicit discard-and-reload action; it does not retry the stale
+document or silently replace the screen.
 
 **A browser holding the *same* `dataVersion` as the restored file overwrites it
 silently.** This is the one that bites. `dataVersion` is a plain counter, not a

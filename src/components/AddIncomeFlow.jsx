@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD, todayISO } from "../lib/utils.js";
+import { centsToInput, fmtAUD, parseAUDToCents, todayISO } from "../lib/utils.js";
 import { IconPlus, IconCheck, IconZap, IconWallet, IconEnvelope } from "./Icons.jsx";
 
 // Unified "Add Income" flow — one place to log money coming in, from any
@@ -31,7 +31,8 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
   const [allocationMode, setAllocationMode] = useState("unallocated");
   const [splits, setSplits] = useState([{ catId: expenseCats[0]?.id || "", amount: "" }]);
 
-  const parsedAmount = parseFloat(amount) || 0;
+  const parseInput = (value) => { try { return parseAUDToCents(value); } catch { return null; } };
+  const parsedAmount = parseInput(amount) || 0;
 
   // Recurring shortcut for the selected source
   const recurringAmt = useMemo(() => {
@@ -48,12 +49,13 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
     return need;
   }, [expenseCats]);
 
-  const splitTotal = splits.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const parsedSplits = splits.map((row) => ({ ...row, amount: parseInput(row.amount) }));
+  const splitTotal = parsedSplits.reduce((s, row) => s + (row.amount || 0), 0);
   const splitRemaining = parsedAmount - splitTotal;
 
   const sourceValid = newSource ? newSourceName.trim().length > 0 : !!sourceId;
   const splitsValid = allocationMode !== "split" ||
-    (splits.every((r) => r.catId && (parseFloat(r.amount) || 0) >= 0) && splitTotal > 0 && splitTotal <= parsedAmount + 0.005);
+    (parsedSplits.every((row) => row.catId && row.amount !== null && row.amount >= 0) && splitTotal > 0 && splitTotal <= parsedAmount);
   const canSubmit = sourceValid && parsedAmount > 0 && splitsValid;
 
   const submit = (e) => {
@@ -67,7 +69,7 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
       description: description.trim(),
       allocationMode,
       splits: allocationMode === "split"
-        ? splits.map((r) => ({ catId: r.catId, amount: parseFloat(r.amount) || 0 })).filter((r) => r.amount > 0)
+        ? parsedSplits.map((row) => ({ catId: row.catId, amount: row.amount || 0 })).filter((row) => row.amount > 0)
         : [],
     });
   };
@@ -132,7 +134,7 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
         {recurringAmt != null && (
           <button type="button"
             style={{ ...styles.buttonGhost, fontSize: 12, padding: "9px 12px", borderColor: PALETTE.primary, color: PALETTE.primaryDeep, display: "inline-flex", alignItems: "center", gap: 6 }}
-            onClick={() => setAmount(String(recurringAmt))}>
+            onClick={() => setAmount(centsToInput(recurringAmt))}>
             <IconZap size={13} /> Stay Consistent ({fmtAUD(recurringAmt)})
           </button>
         )}
@@ -181,8 +183,8 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
               onClick={() => setSplits((prev) => [...prev, { catId: expenseCats[0]?.id || "", amount: "" }])}>
               <IconPlus size={13} /> Add another envelope
             </button>
-            <span style={{ fontSize: 12, fontWeight: 600, color: splitRemaining < -0.005 ? "var(--byb-over)" : styles.textMuted }}>
-              {splitRemaining < -0.005
+            <span style={{ fontSize: 12, fontWeight: 600, color: splitRemaining < 0 ? "var(--byb-over)" : styles.textMuted }}>
+              {splitRemaining < 0
                 ? `Over by ${fmtAUD(-splitRemaining)}`
                 : `${fmtAUD(splitRemaining)} of ${fmtAUD(parsedAmount)} stays unallocated`}
             </span>

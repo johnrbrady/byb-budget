@@ -17,8 +17,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Copy server + built frontend
+# Copy server, money migration + built frontend
 COPY server.js ./
+COPY money-schema.js money-file.js migrate-money.js ./
 COPY --from=build /app/dist ./dist
 
 # Data volume — mount a TrueNAS dataset here for persistence
