@@ -38,9 +38,9 @@ done
 (( ${#PROJECT_CONFIGS[@]} >= MIN_INSTANCES )) || die "found ${#PROJECT_CONFIGS[@]} unique BYB projects; expected at least $MIN_INSTANCES"
 
 if [[ "${BYB_SKIP_BACKUP:-0}" != "1" ]]; then
-  [[ -x "$SCRIPT_DIR/byb-backup.sh" ]] || die "byb-backup.sh is not executable beside this script; take a verified backup or rerun with BYB_SKIP_BACKUP=1 only if one was just checked"
+  [[ -f "$SCRIPT_DIR/byb-backup.sh" ]] || die "byb-backup.sh is not beside this script; take a verified backup or rerun with BYB_SKIP_BACKUP=1 only if one was just checked"
   printf 'Taking and verifying a fresh four-household backup...\n'
-  "$SCRIPT_DIR/byb-backup.sh" -d "${BYB_BACKUP_DIR:-/mnt/Zion/BYB_Backups}" -k "${BYB_BACKUP_KEEP:-14}"
+  sh "$SCRIPT_DIR/byb-backup.sh" -d "${BYB_BACKUP_DIR:-/mnt/Zion/BYB_Backups}" -k "${BYB_BACKUP_KEEP:-14}"
 fi
 
 printf 'Pulling %s...\n' "$IMAGE"
