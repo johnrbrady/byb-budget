@@ -54,3 +54,13 @@ test("TrueNAS community package is complete and pinned to the release image", ()
   expect(template).toContain('c1.healthcheck.set_test("wget"');
   expect(template).toContain("tpl.portals.add");
 });
+
+test("interim TrueNAS updater discovers instances and recreates instead of restarting", () => {
+  const updater = fs.readFileSync(path.join(root, "update-truenas.sh"), "utf8");
+  expect(updater).toContain("com.docker.compose.project.config_files");
+  expect(updater).toContain('up -d --force-recreate --pull always');
+  expect(updater).toContain("TARGET_IMAGE_ID");
+  expect(updater).toContain("byb-backup.sh");
+  expect(updater).not.toMatch(/docker\s+restart/);
+  expect(updater).not.toContain("ix-byb-aleem-byb-aleem-1");
+});

@@ -68,7 +68,7 @@ OK_MARKER="BACKUP-OK"
 # Run inside the container with the container's own Node. The host may have no
 # jq, no python3 and no node, and guessing wrong is how a backup script quietly
 # stops verifying anything. The container is guaranteed to have Node because it
-# is node:20-alpine and it has to be running for us to copy out of it — and it
+# is a Node Alpine image and it has to be running for us to copy out of it — and it
 # is the exact runtime that will have to parse this file during a restore, so
 # it is the right judge of whether the file is usable.
 #
