@@ -478,6 +478,78 @@ button:focus-visible {
   transform: scale(0.995);
 }
 
+/* ── Save-conflict recovery ────────────────────────────────────────────────
+   Persistent by design: a transient toast is not enough when the next action
+   can decide which person's household snapshot survives. */
+
+.byb-save-conflict {
+  position: fixed;
+  z-index: 300;
+  left: 50%;
+  bottom: var(--byb-space-6);
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--byb-space-4);
+  padding: var(--byb-space-4);
+  border: 2px solid var(--byb-warn);
+  border-radius: var(--byb-radius-lg);
+  background: var(--byb-surface);
+  color: var(--byb-text);
+  box-shadow: var(--byb-elev-3);
+}
+
+.byb-save-conflict strong,
+.byb-save-conflict span {
+  display: block;
+}
+
+.byb-save-conflict strong {
+  margin-bottom: var(--byb-space-1);
+  font-size: var(--byb-text-lg);
+}
+
+.byb-save-conflict span {
+  color: var(--byb-text-muted);
+  font-size: var(--byb-text-md);
+  line-height: 1.45;
+}
+
+.byb-save-conflict button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  max-width: 260px;
+  padding: var(--byb-space-3) var(--byb-space-4);
+  border: 0;
+  border-radius: var(--byb-radius-sm);
+  background: var(--byb-danger);
+  color: #FFFFFF;
+  font: inherit;
+  font-size: var(--byb-text-md);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.byb-save-conflict button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+@media (max-width: 760px) {
+  .byb-save-conflict {
+    bottom: calc(var(--byb-mobile-nav-height, 72px) + var(--byb-space-3));
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .byb-save-conflict button {
+    width: 100%;
+    max-width: none;
+  }
+}
+
 /* ── Theme switching ───────────────────────────────────────────────────────
    A theme swap changes the custom properties under every element at once.
    Chrome does not re-resolve a var()-valued property that is mid-transition,
