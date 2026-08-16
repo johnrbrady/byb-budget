@@ -166,6 +166,17 @@ docker compose up -d --build
 - Set `BYB_API_KEY` / `BYB_WEBHOOK_URL` in the compose environment to enable
   the n8n integration.
 
+For the four existing TrueNAS Custom Apps, run `bash update-truenas.sh` on the
+NAS from a directory that also contains `byb-backup.sh`. The updater discovers
+every BYB Compose project, takes and verifies a fresh backup, recreates each
+project (a restart cannot adopt a new image), and checks every running image ID.
+It fails if fewer than four instances are found. Do not restore the old
+hard-coded three-container script.
+
+The contribution-ready TrueNAS 25.10 community app is under `truenas-app/`.
+See [TRUENAS-APP.md](TRUENAS-APP.md) for the supported catalog route and the
+backed-up migration procedure that eventually replaces the interim updater.
+
 Once deployed, open the address on your phone and "Add to Home Screen" — the
 app is a PWA and behaves like a native app.
 
