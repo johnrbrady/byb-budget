@@ -97,12 +97,17 @@ describe("design tokens in global.css", () => {
       const d = value(dark, token);
       expect(l).toMatch(/^#[0-9a-f]{6}$/);
       expect(d).toMatch(/^#[0-9a-f]{6}$/);
+      // Not the primary brand green: that one is the logo, the primary button
+      // and the active tab, so reusing it for status would make "healthy" and
+      // "this is a button" the same colour.
       expect(l).not.toBe("#7fb069");
       expect(d).not.toBe("#7fb069");
-      // and not the deep brand green either, which is what used to stand in
-      // for "positive" and caused the muddle.
-      expect(l).not.toBe("#5f8a4f");
-      expect(d).not.toBe("#5f8a4f");
+      // The deep brand green (#5F8A4F) IS allowed, and is what --byb-ok uses.
+      // An earlier pass forbade it here and moved on-track to a teal so every
+      // status cleared 4.5:1. The stakeholder rejected that on sight — it read
+      // as a different app — and chose identity over the contrast ratio.
+      // See the rationale in global.css. This assertion was removed with that
+      // decision, deliberately, not because it was inconvenient.
     }
   );
 

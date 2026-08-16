@@ -18,15 +18,23 @@
   --byb-primary-ring: rgba(127, 176, 105, 0.25);
 
   /* ── Semantic status ─────────────────────────────────────────────────────
-     Separate hues from the brand, so a green thing on screen is the app's
-     identity and a status colour is a statement about money. On-track leans
-     teal against the brand's yellow-green; low is amber; overspent is red.
-     All three clear 4.5:1 on their theme's page background. */
-  --byb-ok: #257A59;
-  --byb-ok-soft: #E3F1EA;
-  --byb-low: #9A6210;
+     The household's own colours, restored 2026-08-16 at the stakeholder's
+     request. An earlier pass moved on-track to a teal (#257A59) so every
+     status cleared 4.5:1 and none shared a hue with the brand. It read as the
+     wrong app: that teal sits roughly 56 degrees of hue from the sage it
+     replaced, and envelope balances are the figures most looked at. Identity
+     won over the contrast ratio, which was the stakeholder's call to make.
+
+     On-track is the deep brand green again, near 3.9:1 on the light page —
+     under WCAG AA for body text. Acceptable here because it is carried on
+     large bold currency figures, and because colour is never the only signal:
+     the fill meter and the worded status pill say the same thing. Revisit if
+     status colour is ever used on small text. */
+  --byb-ok: #5F8A4F;
+  --byb-ok-soft: #EDF3E8;
+  --byb-low: #C27B3F;
   --byb-low-soft: #FAEEDA;
-  --byb-over: #C7362C;
+  --byb-over: #DC2626;
   --byb-over-soft: #FBE5E3;
 
   /* Reserved for destructive controls, not for envelope health. */
@@ -136,9 +144,13 @@
 
 [data-theme="dark"] {
   /* Status colours lift on dark — the light-theme values are unreadable at
-     these luminances. */
-  --byb-ok: #57C79B;
-  --byb-ok-soft: #16302A;
+     these luminances. On-track is the brand sage lightened, not shifted: same
+     hue family as the light theme's #5F8A4F, so the two themes read as one
+     app. Before the token pass the app used the light value on both themes,
+     which left balances at roughly 3.3:1 on a near-black page; that was a bug
+     rather than a decision, so it is not restored. */
+  --byb-ok: #9FC98D;
+  --byb-ok-soft: #1E2A19;
   --byb-low: #E0A63C;
   --byb-low-soft: #33270F;
   --byb-over: #F2766B;
