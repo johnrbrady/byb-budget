@@ -16,6 +16,7 @@ import { TransactionsView } from "./views/TransactionsView.jsx";
 import { EnvelopesView } from "./views/EnvelopesView.jsx";
 import { RecurringView } from "./views/RecurringView.jsx";
 import { ReportsView } from "./views/ReportsView.jsx";
+import { transactionFingerprint } from "./lib/csvImport.js";
 
 const INCOME_COLOURS = ["#A0B894", "#8FA876", "#6B9559", "#7FB069", "#5F8A4F"];
 
@@ -771,11 +772,74 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     }
   };
 
+  const importTransactions = (rows, meta = {}) => {
+    const existingIds = new Set(transactions.map((transaction) => transaction.id));
+    const existingCounts = new Map();
+    transactions.forEach((transaction) => {
+      const fingerprint = transactionFingerprint(transaction);
+      existingCounts.set(fingerprint, (existingCounts.get(fingerprint) || 0) + 1);
+    });
+    const categoryTypes = new Map(categories.map((category) => [category.id, category.type]));
+    let skipped = Number(meta.skipped || 0) + Number(meta.invalid || 0);
+    let duplicates = Number(meta.duplicates || 0);
+    const imported = [];
+    for (const raw of rows || []) {
+      const type = raw.type === "income" ? "income" : raw.type === "expense" ? "expense" : null;
+      const amount = raw.amount;
+      const date = String(raw.date || "");
+      const categoryId = raw.categoryId;
+      if (!type || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isSafeInteger(amount) || amount <= 0 || categoryTypes.get(categoryId) !== type) {
+        skipped++;
+        continue;
+      }
+      const transaction = {
+        ...raw,
+        id: raw.id && !existingIds.has(raw.id) ? raw.id : uid(),
+        date,
+        amount,
+        type,
+        categoryId,
+        description: String(raw.description || "").trim(),
+        isRecurring: false,
+        recurringId: null,
+        allocations: [],
+        imported: true,
+        addedBy: raw.addedBy || activeUserId,
+        createdAt: raw.createdAt || new Date().toISOString(),
+      };
+      if (!meta.preDeduped) {
+        const fingerprint = transactionFingerprint(transaction);
+        const alreadyStored = existingCounts.get(fingerprint) || 0;
+        if (alreadyStored > 0) {
+          existingCounts.set(fingerprint, alreadyStored - 1);
+          duplicates++;
+          continue;
+        }
+      }
+      existingIds.add(transaction.id);
+      imported.push(transaction);
+    }
+    if (imported.length === 0) {
+      showToast(duplicates ? `No new transactions · ${duplicates} already imported` : "No valid new transactions found");
+      return { ok: false, count: 0, skipped, duplicates };
+    }
+    const next = imported.reduce((current, transaction) => applyTxEffect(current, transaction, 1), ledger());
+    const merged = [...imported, ...transactions];
+    setTransactions(merged);
+    commitLedger(next, { transactions: merged });
+    const notes = [
+      skipped ? `${skipped} skipped` : "",
+      duplicates ? `${duplicates} already imported` : "",
+      meta.rounded ? `${meta.rounded} rounded to cents` : "",
+    ].filter(Boolean);
+    showToast(`Imported ${imported.length} transaction${imported.length === 1 ? "" : "s"}${notes.length ? ` · ${notes.join(" · ")}` : ""}`);
+    return { ok: true, count: imported.length, skipped, duplicates };
+  };
+
   const importFromJSON = (jsonText) => {
     try {
       const parsed = JSON.parse(jsonText);
       if (!Array.isArray(parsed)) throw new Error("Expected a JSON array of transactions");
-      const existing = new Set(transactions.map((t) => t.id));
       const incomeCatId = categories.find((c) => c.type === "income")?.id || "";
       const expenseCatId = categories.find((c) => c.type === "expense")?.id || "";
       let rounded = 0;
@@ -794,18 +858,11 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           isRecurring: false,
           recurringId: null,
           allocations: [],
-          imported: true,
           addedBy: t.addedBy || activeUserId,
           createdAt: t.createdAt || new Date().toISOString(),
         }); })
-        .filter((t) => t.amount > 0 && !existing.has(t.id));
-      if (valid.length === 0) { showToast("No new transactions found in the pasted data"); return false; }
-      const next = valid.reduce((acc, tx) => applyTxEffect(acc, tx, 1), ledger());
-      const newTx = [...valid, ...transactions];
-      setTransactions(newTx);
-      commitLedger(next, { transactions: newTx });
-      showToast(`Imported ${valid.length} transaction${valid.length !== 1 ? "s" : ""}${rounded ? ` · ${rounded} amount${rounded === 1 ? "" : "s"} rounded to cents` : ""}`);
-      return true;
+        .filter((t) => t.amount > 0);
+      return importTransactions(valid, { rounded }).ok;
     } catch (e) {
       showToast("Import failed: " + (e.message || "Invalid JSON"));
       return false;
@@ -819,12 +876,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     }
     Promise.resolve(onImport(file, { categories, users })).then((result) => {
       if (result && Array.isArray(result.added)) {
-        const existing = new Set(transactions.map((t) => t.id));
-        const newRows = result.added.filter((t) => !existing.has(t.id));
-        const merged = [...transactions, ...newRows];
-        setTransactions(merged);
-        persist({ transactions: merged });
-        showToast(`Imported ${newRows.length} row(s)${result.skipped ? `, skipped ${result.skipped}` : ""}${result.rounded ? `, rounded ${result.rounded}` : ""}`);
+        importTransactions(result.added, result);
       }
     }).catch(() => showToast("Import failed"));
   };
@@ -973,6 +1025,8 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
                   unallocatedBalance={unallocatedBalance}
                   onSetUnallocated={setUnallocatedManually}
                   onImportJSON={importFromJSON}
+                  onImportTransactions={importTransactions}
+                  activeUserId={activeUserId}
                   onNavigateToCategory={navigateToCategory}
                   activeMonth={activeMonth}
                   styles={styles}

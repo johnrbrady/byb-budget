@@ -6,6 +6,7 @@ import { PieChart } from "../components/PieChart.jsx";
 import { CategorySpendingTrends } from "../components/CategorySpendingTrends.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { IconHistory, IconWallet } from "../components/Icons.jsx";
+import { categoryHistory, normaliseDescription, parseBankCsv } from "../lib/csvImport.js";
 
 function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   const [editing, setEditing] = useState(false);
@@ -218,11 +219,13 @@ function AdjustmentEntry({ entry, categoriesById, usersById, styles }) {
   );
 }
 
-export function ReportsView({ transactions, categories, categoriesById, usersById, reportRange, setReportRange, handleExport, assets, onSaveAsset, onDeleteAsset, transfers, reconcileLog, adjustments, unallocatedBalance, onSetUnallocated, onImportJSON, onNavigateToCategory, activeMonth, styles }) {
+export function ReportsView({ transactions, categories, categoriesById, usersById, reportRange, setReportRange, handleExport, assets, onSaveAsset, onDeleteAsset, transfers, reconcileLog, adjustments, unallocatedBalance, onSetUnallocated, onImportJSON, onImportTransactions, onNavigateToCategory, activeMonth, activeUserId, styles }) {
   const [assetForm, setAssetForm] = useState(null); // null=closed, {}=new, {id,...}=editing
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importCopied, setImportCopied] = useState(false);
+  const [csvPreview, setCsvPreview] = useState(null);
+  const [csvError, setCsvError] = useState("");
 
   const expenseCatList = categories.filter((c) => c.type === "expense");
   const aiPrompt = `Convert my bank statement transactions to JSON format for the BYB budget app.
@@ -280,6 +283,38 @@ My transactions and bank statement:
     if (!importText.trim()) return;
     const ok = onImportJSON(importText);
     if (ok) { setImportText(""); setImportOpen(false); }
+  };
+
+  const chooseCsv = async (file) => {
+    setCsvError("");
+    setCsvPreview(null);
+    if (!file) return;
+    try {
+      const parsed = parseBankCsv(await file.text(), transactions);
+      const history = categoryHistory(transactions);
+      const fallback = {
+        expense: categories.find((category) => category.type === "expense")?.id || "",
+        income: categories.find((category) => category.type === "income")?.id || "",
+      };
+      const rows = parsed.rows.map((row, index) => {
+        const historyCategoryId = history.get(`${row.type}|${normaliseDescription(row.description)}`);
+        return { ...row, previewId: `${row.sourceRow}-${index}`, categoryId: historyCategoryId || fallback[row.type], matchedByHistory: Boolean(historyCategoryId) };
+      });
+      setCsvPreview({ ...parsed, rows, fileName: file.name });
+    } catch (error) {
+      setCsvError(error.message || "Could not read that CSV file");
+    }
+  };
+
+  const setCsvCategory = (previewId, categoryId) => {
+    setCsvPreview((current) => ({ ...current, rows: current.rows.map((row) => row.previewId === previewId ? { ...row, categoryId, matchedByHistory: false } : row) }));
+  };
+
+  const runCsvImport = () => {
+    if (!csvPreview?.rows.length || typeof onImportTransactions !== "function") return;
+    const rows = csvPreview.rows.map(({ previewId, matchedByHistory, sourceRow, ...row }) => ({ ...row, addedBy: activeUserId }));
+    const result = onImportTransactions(rows, { invalid: csvPreview.invalid, duplicates: csvPreview.duplicates, rounded: csvPreview.rounded, preDeduped: true });
+    if (result?.ok) { setCsvPreview(null); setCsvError(""); setImportOpen(false); }
   };
   const [assetName, setAssetName] = useState("");
   const [assetValue, setAssetValue] = useState("");
@@ -411,9 +446,53 @@ My transactions and bank statement:
 
       {importOpen && (
         <div className="byb-panel" style={{ ...styles.card, marginBottom: 20, borderColor: PALETTE.primary }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Import transactions via AI</div>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Import a bank statement</div>
+          <div style={{ fontSize: 13, color: styles.textMuted, marginBottom: 10 }}>
+            Choose a CSV downloaded from your bank. BYB! previews every new row, remembers categories used for the same description and protects against importing the same statement twice.
+          </div>
+
+          <input
+            aria-label="Choose bank CSV"
+            data-testid="bank-csv-input"
+            type="file"
+            accept=".csv,text/csv"
+            style={{ ...styles.input, marginBottom: 10 }}
+            onChange={(event) => chooseCsv(event.target.files?.[0])}
+          />
+          {csvError && <div role="alert" style={{ color: "var(--byb-over)", fontSize: 13, marginBottom: 10 }}>{csvError}</div>}
+          {csvPreview && (
+            <div data-testid="csv-preview" style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 8 }}>
+                {csvPreview.fileName}: {csvPreview.rows.length} new · {csvPreview.duplicates} already imported · {csvPreview.invalid} invalid
+              </div>
+              {csvPreview.rows.length === 0 ? (
+                <div style={{ fontSize: 13 }}>No new transactions found in this statement.</div>
+              ) : (
+                <>
+                  <div style={{ maxHeight: 320, overflowY: "auto", border: `1px solid ${styles.border}`, borderRadius: 6 }}>
+                    {csvPreview.rows.map((row) => (
+                      <div key={row.previewId} data-testid="csv-preview-row" style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr" : "90px minmax(130px, 1fr) 100px minmax(130px, 180px)", gap: 8, alignItems: "center", padding: 8, borderBottom: `1px solid ${styles.border}` }}>
+                        <span style={{ fontSize: 12 }}>{row.date}</span>
+                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{row.description}</span>
+                        <strong style={{ color: row.type === "income" ? "var(--byb-ok)" : "var(--byb-over)", fontVariantNumeric: "tabular-nums" }}>{row.type === "income" ? "+" : "−"}{fmtAUD(row.amount)}</strong>
+                        <label>
+                          <span className="sr-only">Category for {row.description}</span>
+                          <select aria-label={`Category for ${row.description}`} style={{ ...styles.input, width: "100%" }} value={row.categoryId} onChange={(event) => setCsvCategory(row.previewId, event.target.value)}>
+                            {categories.filter((category) => category.type === row.type).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <button style={{ ...styles.button, marginTop: 10 }} onClick={runCsvImport}>Import {csvPreview.rows.length} transaction{csvPreview.rows.length === 1 ? "" : "s"}</button>
+                </>
+              )}
+            </div>
+          )}
+
+          <div style={{ fontWeight: 700, fontSize: 14, margin: "16px 0 4px", paddingTop: 14, borderTop: `1px solid ${styles.border}` }}>Or use an AI assistant</div>
           <div style={{ fontSize: 13, color: styles.textMuted, marginBottom: 14 }}>
-            Use your AI assistant (ChatGPT, Claude, Gemini, etc.) to convert your bank statement into the format BYB! understands, then paste the result below.
+            ChatGPT, Claude or Gemini can convert statements that are not available as CSV; paste the JSON result below.
           </div>
 
           <div style={{ marginBottom: 14 }}>
@@ -439,7 +518,7 @@ My transactions and bank statement:
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button style={{ ...styles.button, flex: styles.isMobile ? 1 : "none" }} onClick={runImport} disabled={!importText.trim()}>Import Transactions</button>
-            <button style={styles.buttonGhost} onClick={() => { setImportOpen(false); setImportText(""); }}>Cancel</button>
+            <button style={styles.buttonGhost} onClick={() => { setImportOpen(false); setImportText(""); setCsvPreview(null); setCsvError(""); }}>Cancel</button>
           </div>
         </div>
       )}

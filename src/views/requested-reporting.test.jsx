@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { TransactionsView } from "./TransactionsView.jsx";
 import { ReportsView } from "./ReportsView.jsx";
 import { buildStyles } from "../styles/buildStyles.js";
@@ -8,6 +8,7 @@ const styles = buildStyles("light", false);
 const categories = [
   { id: "c-groceries", name: "Groceries", type: "expense", colour: "#7FB069", envelopeBalance: 0, baseAmount: 0 },
   { id: "c-fuel", name: "Fuel", type: "expense", colour: "#C27B3F", envelopeBalance: 0, baseAmount: 0 },
+  { id: "c-salary", name: "Salary", type: "income", colour: "#A0B894" },
 ];
 const categoriesById = Object.fromEntries(categories.map((category) => [category.id, category]));
 const expense = (id, date, amount, categoryId = "c-groceries") => ({ id, date, amount, categoryId, type: "expense", description: id, addedBy: "u-1" });
@@ -50,13 +51,14 @@ test("an explicit transaction date filter shows the total spent prominently", ()
   expect(total).toHaveTextContent("$20.00");
 });
 
-function ReportsHarness() {
+function ReportsHarness({ onImportTransactions = () => ({ ok: true }) } = {}) {
   const [reportRange, setReportRange] = useState({ start: "2026-01-01", end: "2026-03-31" });
   return <ReportsView
     transactions={[
       expense("jan", "2026-01-15", 1000),
       expense("feb", "2026-02-15", 3000, "c-fuel"),
       expense("mar", "2026-03-15", 2000),
+      { ...expense("history", "2025-12-15", 550, "c-fuel"), description: "Coffee Club", createdAt: "2025-12-15T09:00:00Z" },
     ]}
     categories={categories}
     categoriesById={categoriesById}
@@ -73,11 +75,38 @@ function ReportsHarness() {
     unallocatedBalance={0}
     onSetUnallocated={() => {}}
     onImportJSON={() => ({ count: 0 })}
+    onImportTransactions={onImportTransactions}
+    activeUserId="u-1"
     onNavigateToCategory={() => {}}
     activeMonth="2026-03"
     styles={styles}
   />;
 }
+
+test("a bank CSV is previewed, history selects its category, and approved rows are handed to the ledger", async () => {
+  const onImportTransactions = jest.fn(() => ({ ok: true }));
+  render(<ReportsHarness onImportTransactions={onImportTransactions} />);
+  fireEvent.click(screen.getByText("Import Transactions"));
+  const file = {
+    name: "statement.csv",
+    text: async () => "Date,Description,Amount\n15/06/2026,Coffee Club,-6.50\n15/06/2026,Salary,100.00",
+  };
+  fireEvent.change(screen.getByLabelText("Choose bank CSV"), { target: { files: [file] } });
+
+  await waitFor(() => expect(screen.getByTestId("csv-preview")).toBeInTheDocument());
+  expect(screen.getAllByTestId("csv-preview-row")).toHaveLength(2);
+  expect(screen.getByLabelText("Category for Coffee Club")).toHaveValue("c-fuel");
+  expect(screen.getByLabelText("Category for Salary")).toHaveValue("c-salary");
+
+  fireEvent.click(screen.getByText("Import 2 transactions"));
+  expect(onImportTransactions).toHaveBeenCalledTimes(1);
+  const [rows, meta] = onImportTransactions.mock.calls[0];
+  expect(rows).toEqual(expect.arrayContaining([
+    expect.objectContaining({ date: "2026-06-15", description: "Coffee Club", amount: 650, type: "expense", categoryId: "c-fuel", addedBy: "u-1" }),
+    expect.objectContaining({ date: "2026-06-15", description: "Salary", amount: 10000, type: "income", categoryId: "c-salary", addedBy: "u-1" }),
+  ]));
+  expect(meta.preDeduped).toBe(true);
+});
 
 test("the distribution pie switches from one month to any custom date range", () => {
   render(<ReportsHarness />);
