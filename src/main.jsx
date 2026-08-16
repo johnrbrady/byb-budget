@@ -10,6 +10,7 @@ function getToken() {
 }
 
 const SAVE_DEBOUNCE_MS = 600;
+const SAVE_RETRY_DELAYS_MS = process.env.NODE_ENV === "test" ? [50, 100] : [1000, 3000];
 
 function SkeletonScreen() {
   return (
@@ -32,6 +33,7 @@ export function Root() {
   const [loaded, setLoaded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [saveConflict, setSaveConflict] = useState(false);
+  const [saveFailure, setSaveFailure] = useState(null);
   const [discardingConflict, setDiscardingConflict] = useState(false);
 
   // Optimistic-concurrency version of the data we last loaded/saved.
@@ -44,6 +46,8 @@ export function Root() {
   const timerRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const conflictRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef(null);
 
   const loadData = useCallback(async (preserveOnFailure = false) => {
     const token = getToken();
@@ -110,6 +114,9 @@ export function Root() {
         // require a clearly labelled, explicit discard instead.
         pendingRef.current = latestDraftRef.current;
         conflictRef.current = true;
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+        setSaveFailure(null);
         setSaveConflict(true);
         console.warn("Save conflict — local changes remain on screen and are not saved.");
         return;
@@ -118,13 +125,33 @@ export function Root() {
         const body = await res.json();
         if (typeof body.dataVersion === "number") versionRef.current = body.dataVersion;
         if (latestDraftRef.current === data) latestDraftRef.current = null;
+        retryCountRef.current = 0;
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+        setSaveFailure(null);
         continueQueue = !!pendingRef.current;
       } else {
         pendingRef.current = latestDraftRef.current || data;
+        const retryIndex = retryCountRef.current;
+        if (retryIndex < SAVE_RETRY_DELAYS_MS.length) {
+          retryCountRef.current = retryIndex + 1;
+          setSaveFailure({ retrying: true, attempt: retryIndex + 1, status: res.status });
+          retryTimerRef.current = setTimeout(flushSave, SAVE_RETRY_DELAYS_MS[retryIndex]);
+        } else {
+          setSaveFailure({ retrying: false, status: res.status });
+        }
         console.warn(`Save failed with status ${res.status}.`);
       }
     } catch {
       pendingRef.current = latestDraftRef.current || data;
+      const retryIndex = retryCountRef.current;
+      if (retryIndex < SAVE_RETRY_DELAYS_MS.length) {
+        retryCountRef.current = retryIndex + 1;
+        setSaveFailure({ retrying: true, attempt: retryIndex + 1, status: null });
+        retryTimerRef.current = setTimeout(flushSave, SAVE_RETRY_DELAYS_MS[retryIndex]);
+      } else {
+        setSaveFailure({ retrying: false, status: null });
+      }
       console.warn("Save failed — is the server running? (npm start)");
     } finally {
       saveInFlightRef.current = false;
@@ -139,6 +166,10 @@ export function Root() {
     latestDraftRef.current = data;
     pendingRef.current = data;
     if (conflictRef.current) return;
+    retryCountRef.current = 0;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    setSaveFailure(null);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(flushSave, SAVE_DEBOUNCE_MS);
   }, [flushSave]);
@@ -148,9 +179,21 @@ export function Root() {
     timerRef.current = null;
     pendingRef.current = null;
     latestDraftRef.current = null;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    retryCountRef.current = 0;
     conflictRef.current = false;
     setSaveConflict(false);
+    setSaveFailure(null);
   }, []);
+
+  const retrySaveNow = useCallback(() => {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    retryCountRef.current = 0;
+    setSaveFailure({ retrying: true, attempt: 0, status: saveFailure?.status ?? null });
+    flushSave();
+  }, [flushSave, saveFailure]);
 
   const discardAndReload = useCallback(async () => {
     setDiscardingConflict(true);
@@ -175,6 +218,8 @@ export function Root() {
     return () => {
       window.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", flushSave);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
   }, [flushSave]);
 
@@ -191,6 +236,19 @@ export function Root() {
           <button type="button" onClick={discardAndReload} disabled={discardingConflict}>
             {discardingConflict ? "Reloading latest…" : "Discard my unsaved changes and reload latest"}
           </button>
+        </div>
+      )}
+      {!saveConflict && saveFailure && (
+        <div className="byb-save-conflict" role="alert" aria-live="assertive" data-testid="save-failure">
+          <div>
+            <strong>Changes not saved</strong>
+            <span>
+              {saveFailure.retrying
+                ? `BYB! could not reach the server. Your changes are still on screen and will retry${saveFailure.attempt ? ` (${saveFailure.attempt} of ${SAVE_RETRY_DELAYS_MS.length})` : " now"}.`
+                : "BYB! could not save after two retries. Your changes are still on screen."}
+            </span>
+          </div>
+          <button type="button" onClick={retrySaveNow}>Retry save now</button>
         </div>
       )}
       <BudgetApp

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
-import { uid, fmtAUD, monthKey, todayISO, addPeriod, dayOfMonth, genMonthRange } from "./lib/utils.js";
+import { uid, fmtAUD, monthKey, todayISO, dayOfMonth, genMonthRange } from "./lib/utils.js";
 import { MONEY_SCALE, parseImportedAUDToCents, reconcileEntryToDollars, toCentsDocument, toDollarsDocument } from "../money-schema.js";
 import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger, applyOpeningBalances, applyResetBalances, applySetUnallocated, householdTotal } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
@@ -18,6 +18,7 @@ import { RecurringView } from "./views/RecurringView.jsx";
 import { ReportsView } from "./views/ReportsView.jsx";
 import { transactionFingerprint } from "./lib/csvImport.js";
 import { captureBudgetMonth } from "./lib/budgetHistory.js";
+import { recurringCatchUp } from "./lib/recurringCatchUp.js";
 
 const INCOME_COLOURS = ["#A0B894", "#8FA876", "#6B9559", "#7FB069", "#5F8A4F"];
 
@@ -408,7 +409,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
         message: `${from?.name || "That envelope"} holds ${fmtAUD(available)} but this transfer moves ${fmtAUD(amount)}. This will leave it at ${fmtAUD(available - amount)}.`,
         confirmLabel: "Transfer anyway",
       });
-      if (!ok) return;
+      if (!ok) return false;
     }
     const newCats = categories.map((c) => {
       if (c.id === fromId) return { ...c, envelopeBalance: (c.envelopeBalance || 0) - amount };
@@ -421,6 +422,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setTransfers(newTransfers);
     persist({ categories: newCats, transfers: newTransfers });
     showToast(`Transferred ${fmtAUD(amount)}`);
+    return true;
   };
 
   // Combined: log multiple income transactions + fill all envelopes in one step
@@ -709,10 +711,15 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     // falls on, so it is what the monthly cycle anchors to. Recording it here
     // means a clamp into a short February cannot quietly become the rule's new
     // day (see addPeriod), and an edited due date replaces a stale anchor.
-    const rule = incoming.nextDueDate ? { ...incoming, dueDay: dayOfMonth(incoming.nextDueDate) } : incoming;
+    const { startDate: _discardedLegacyStartDate, ...withoutStartDate } = incoming;
+    const rule = withoutStartDate.nextDueDate ? { ...withoutStartDate, dueDay: dayOfMonth(withoutStartDate.nextDueDate) } : withoutStartDate;
     let newRecurring;
     if (rule.id) {
-      newRecurring = recurring.map((r) => (r.id === rule.id ? { ...r, ...rule } : r));
+      newRecurring = recurring.map((r) => {
+        if (r.id !== rule.id) return r;
+        const { startDate: _oldStartDate, ...updated } = { ...r, ...rule };
+        return updated;
+      });
       showToast("Recurring rule updated");
     } else {
       newRecurring = [...recurring, { ...rule, id: uid() }];
@@ -756,23 +763,29 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     const today = todayISO();
     const due = recurring.filter((r) => r.nextDueDate <= today);
     if (due.length === 0) return;
-    const newPosted = due.map((r) => ({
-      id: uid(), date: r.nextDueDate, amount: r.amount, type: r.type,
+    let schedules;
+    try {
+      schedules = new Map(due.map((rule) => [rule.id, recurringCatchUp(rule, today)]));
+    } catch (error) {
+      showToast(`Could not post recurring transactions: ${error.message}`);
+      return;
+    }
+    const createdAt = new Date().toISOString();
+    const newPosted = due.flatMap((r) => schedules.get(r.id).dates.map((date) => ({
+      id: uid(), date, amount: r.amount, type: r.type,
       categoryId: r.categoryId, description: r.label, isRecurring: true,
-      recurringId: r.id, allocations: [], addedBy: r.addedBy, createdAt: new Date().toISOString(),
-    }));
+      recurringId: r.id, allocations: [], addedBy: r.addedBy, createdAt,
+    })));
     const newTx = [...newPosted, ...transactions];
     const newRecurring = recurring.map((r) => {
       if (r.nextDueDate > today) return r;
-      // Rules saved before the anchor existed take it from where they are now,
-      // which is the last date the old code got right for them.
-      const dueDay = r.dueDay || dayOfMonth(r.nextDueDate);
-      return { ...r, dueDay, nextDueDate: addPeriod(r.nextDueDate, r.frequency, dueDay) };
+      const schedule = schedules.get(r.id);
+      return { ...r, dueDay: schedule.dueDay, nextDueDate: schedule.nextDueDate };
     });
     const next = newPosted.reduce((acc, tx) => applyTxEffect(acc, tx, 1), ledger());
     setTransactions(newTx); setRecurring(newRecurring);
     commitLedger(next, { transactions: newTx, recurring: newRecurring });
-    showToast(`Posted ${due.length} recurring transaction(s)`);
+    showToast(`Posted ${newPosted.length} recurring transaction${newPosted.length === 1 ? "" : "s"} from ${due.length} rule${due.length === 1 ? "" : "s"}`);
   };
 
   const handleExport = () => {

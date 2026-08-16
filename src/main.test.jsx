@@ -147,3 +147,47 @@ test("a newer edit waits for the in-flight save and uses its returned version", 
   expect(secondBody.dataVersion).toBe(8);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
+
+test("a network failure is visible, retains the draft and recovers on a bounded retry", async () => {
+  fetch
+    .mockResolvedValueOnce(response(200, serverData("server initial", 12)))
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce(response(200, { ok: true, dataVersion: 13 }));
+
+  render(<Root />);
+  await screen.findByText("server initial");
+  fireEvent.click(screen.getByRole("button", { name: "Save first edit" }));
+  flushOnPageHide();
+
+  const alert = await screen.findByTestId("save-failure");
+  expect(alert).toHaveTextContent("Your changes are still on screen");
+  expect(screen.getByTestId("draft-description")).toHaveTextContent("first local edit");
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(screen.queryByTestId("save-failure")).not.toBeInTheDocument());
+  expect(JSON.parse(fetch.mock.calls[1][1].body).dataVersion).toBe(12);
+  expect(JSON.parse(fetch.mock.calls[2][1].body).dataVersion).toBe(12);
+});
+
+test("5xx retries stop after two attempts and the explicit retry remains safe", async () => {
+  fetch
+    .mockResolvedValueOnce(response(200, serverData("server initial", 20)))
+    .mockResolvedValueOnce(response(503, { error: "unavailable" }))
+    .mockResolvedValueOnce(response(503, { error: "unavailable" }))
+    .mockResolvedValueOnce(response(503, { error: "unavailable" }))
+    .mockResolvedValueOnce(response(200, { ok: true, dataVersion: 21 }));
+
+  render(<Root />);
+  await screen.findByText("server initial");
+  fireEvent.click(screen.getByRole("button", { name: "Save first edit" }));
+  flushOnPageHide();
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4)); // GET + initial POST + two retries
+  expect(await screen.findByTestId("save-failure")).toHaveTextContent("could not save after two retries");
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); });
+  expect(fetch).toHaveBeenCalledTimes(4);
+
+  fireEvent.click(screen.getByRole("button", { name: "Retry save now" }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(5));
+  await waitFor(() => expect(screen.queryByTestId("save-failure")).not.toBeInTheDocument());
+  expect(JSON.parse(fetch.mock.calls[4][1].body)).toMatchObject({ dataVersion: 20, transactions: [{ description: "first local edit" }] });
+});

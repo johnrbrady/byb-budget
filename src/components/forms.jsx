@@ -298,13 +298,14 @@ export function CatForm({ cat, onSave, onCancel, onDelete, styles }) {
 
 export function RuleForm({ rule, categories, users, activeUserId, onSave, onCancel, styles }) {
   const [form, setForm] = useState(
-    rule ? { ...rule, amount: centsToInput(rule.amount) } : { label: "", amount: "", type: "expense", categoryId: categories.find((c) => c.type === "expense")?.id || "", frequency: "monthly", startDate: todayISO(), nextDueDate: todayISO(), addedBy: activeUserId }
+    rule ? { ...rule, amount: centsToInput(rule.amount) } : { label: "", amount: "", type: "expense", categoryId: categories.find((c) => c.type === "expense")?.id || "", frequency: "monthly", nextDueDate: todayISO(), addedBy: activeUserId }
   );
   const submit = (e) => {
     e.preventDefault();
     const amount = inputCents(form.amount);
     if (!amount || amount <= 0 || !form.label) return;
-    onSave({ ...form, amount });
+    const { startDate: _discardedLegacyStartDate, ...saved } = form;
+    onSave({ ...saved, amount });
   };
   const catOptions = categories.filter((c) => c.type === form.type);
   const mobile = styles.isMobile;
@@ -330,7 +331,6 @@ export function RuleForm({ rule, categories, users, activeUserId, onSave, onCanc
           {catOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
-      <div><div style={styles.label}>Start</div><input style={styles.input} type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value, nextDueDate: form.nextDueDate || e.target.value })} /></div>
       <div><div style={styles.label}>Next due</div><input style={styles.input} type="date" value={form.nextDueDate} onChange={(e) => setForm({ ...form, nextDueDate: e.target.value })} /></div>
       <div style={{ gridColumn: "span 2", display: "flex", alignItems: "end", gap: 8 }}>
         <button type="submit" style={{ ...styles.button, flex: mobile ? 1 : "none" }}>Save</button>

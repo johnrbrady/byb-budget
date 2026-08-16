@@ -19,7 +19,7 @@ export function RecurringView({ recurring, categories, users, categoriesById, ac
     <div>
       {due.length > 0 && (
         <div className="byb-panel" style={{ ...styles.card, background: PALETTE.secondary + "44", borderColor: PALETTE.primary, display: "flex", flexDirection: mobile ? "column" : "row", justifyContent: "space-between", alignItems: mobile ? "stretch" : "center", marginBottom: 16, gap: 10 }} data-testid="due-banner">
-          <div><strong>{due.length}</strong> recurring rule(s) due. Posting advances each rule by one cycle.</div>
+          <div><strong>{due.length}</strong> recurring rule(s) due. Posting catches up every missed occurrence through today.</div>
           <button style={styles.button} onClick={postDueRecurrences} data-testid="post-due">Post due transactions</button>
         </div>
       )}

@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.7.0",
   "type": "module",
+  "engines": { "node": ">=22 <25" },
   "scripts": {
     "dev": "vite",
     "server": "node server.js",
@@ -36,6 +37,7 @@
   },
   "overrides": {
     "esbuild": ">=0.25.0",
-    "@tootallnate/once": ">=3.0.1"
+    "@tootallnate/once": ">=3.0.1",
+    "uuid": "11.1.1"
   }
 }

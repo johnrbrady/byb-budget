@@ -59,9 +59,11 @@ test("category and recurring forms round-trip their edit values at the boundary"
 
   const saveRule = jest.fn();
   render(<RuleForm rule={{ label: "Rent", amount: 1234, type: "expense", categoryId: "c-food", frequency: "monthly", startDate: "2026-06-15", nextDueDate: "2026-07-15" }} categories={categories} users={[]} activeUserId="u-1" onSave={saveRule} onCancel={() => {}} styles={styles} />);
+  expect(screen.queryByText("Start")).not.toBeInTheDocument();
   const ruleAmount = screen.getByDisplayValue("12.34");
   fireEvent.change(ruleAmount, { target: { value: "19.99" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(saveRule).toHaveBeenCalledWith(expect.not.objectContaining({ startDate: expect.anything() }));
   expect(saveRule).toHaveBeenCalledWith(expect.objectContaining({ amount: 1999 }));
 });
 

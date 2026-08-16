@@ -160,7 +160,7 @@ export function TransactionsView({
     transactionHistory: transactions,
     activeUserId,
     onSave: saveTx,
-    onTransfer: (data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); closeEditor(); },
+    onTransfer: async (data) => { if (await onTransferEnvelope(data.fromId, data.toId, data.amount, data.description)) closeEditor(); },
     onCancel: closeEditor,
     defaultCategoryId: !editingTx ? contextCatId : null,
     styles,
