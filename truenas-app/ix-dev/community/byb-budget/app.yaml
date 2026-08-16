@@ -1,0 +1,35 @@
+annotations:
+  min_scale_version: 25.10.0
+app_version: 1.0.0
+capabilities: []
+categories:
+- financial
+changelog_url: https://github.com/johnrbrady/byb-budget/commits/main
+date_added: '2026-08-16'
+description: Private household envelope budgeting with integer-cent accounting.
+home: https://github.com/johnrbrady/byb-budget
+host_mounts: []
+icon: https://raw.githubusercontent.com/johnrbrady/byb-budget/main/public/icon-512.png
+keywords:
+- finance
+- budget
+- envelope
+lib_version: 2.3.4
+lib_version_hash: 2e3a8847308fb2eb0da046018f287c73822c094b5950a10377c3235794ff1242
+maintainers:
+- email: johnrbrady@gmail.com
+  name: John Brady
+  url: https://github.com/johnrbrady
+name: byb-budget
+run_as_context:
+- description: Container [byb-budget] can run as any non-root user and group.
+  gid: 568
+  group_name: Host group is [apps]
+  uid: 568
+  user_name: Host user is [apps]
+screenshots: []
+sources:
+- https://github.com/johnrbrady/byb-budget
+title: BYB! Budget
+train: community
+version: 1.0.0

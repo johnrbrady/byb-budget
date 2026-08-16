@@ -27,9 +27,30 @@ jobs:
       - name: Run tests
         run: npm test
 
+  validate-truenas-app:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate with the official TrueNAS renderer
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/truenas/apps.git "$RUNNER_TEMP/truenas-apps"
+          cp -R truenas-app/ix-dev/community/byb-budget "$RUNNER_TEMP/truenas-apps/ix-dev/community/byb-budget"
+          cd "$RUNNER_TEMP/truenas-apps"
+          python .github/scripts/ci.py \
+            --app byb-budget \
+            --train community \
+            --test-file basic-values.yaml \
+            --render-only=true
+
   build-and-push:
     # No image is published unless the suite above is green
-    needs: test
+    needs: [test, validate-truenas-app]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,6 +59,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Read app version
+        id: app
+        shell: bash
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -53,4 +79,5 @@ jobs:
           push: true
           tags: |
             ghcr.io/johnrbrady/byb-budget:latest
+            ghcr.io/johnrbrady/byb-budget:${{ steps.app.outputs.version }}
             ghcr.io/johnrbrady/byb-budget:${{ github.sha }}
