@@ -32,6 +32,22 @@ test("interactive transaction input rejects more than two decimals", () => {
   expect(onSave).not.toHaveBeenCalled();
 });
 
+test("transaction descriptions offer tappable suggestions from household history", () => {
+  const history = [
+    { type: "expense", description: "Coffee Club" },
+    { type: "expense", description: "Shein" },
+    { type: "expense", description: "Coffee Club" },
+  ];
+  render(<TxForm tx={null} categories={categories} transactionHistory={history} activeUserId="u-1" onSave={() => {}} onCancel={() => {}} styles={styles} />);
+  const description = screen.getByTestId("tx-description");
+  fireEvent.change(description, { target: { value: "cof" } });
+  expect(screen.getByRole("listbox", { name: "Previous descriptions" })).toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole("option", { name: "Coffee Club" }));
+  fireEvent.click(screen.getByRole("option", { name: "Coffee Club" }));
+  expect(description).toHaveValue("Coffee Club");
+  expect(screen.queryByRole("listbox", { name: "Previous descriptions" })).not.toBeInTheDocument();
+});
+
 test("category and recurring forms round-trip their edit values at the boundary", () => {
   const saveCategory = jest.fn();
   const { unmount } = render(<CatForm cat={categories[1]} onSave={saveCategory} onCancel={() => {}} styles={styles} />);

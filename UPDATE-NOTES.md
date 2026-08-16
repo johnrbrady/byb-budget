@@ -12,6 +12,12 @@
   dollar-valued.
 - Concurrent-save conflicts retain the losing person's unsaved screen and
   require an explicit discard-and-reload choice; no stale snapshot is retried.
+- Date-filtered transactions now show the exact total spent at the top.
+- Reports now show one user-selected category bar chart at a time (Groceries by
+  default), and the distribution pie supports either one month or any custom
+  From/To period.
+- Transaction descriptions offer tappable suggestions from the household's own
+  prior entries; no external prediction service is used.
 
 The v0.7 notes below describe the earlier release. The current upgrade changes
 `budget.json` money values to cents on first server start and retains the exact

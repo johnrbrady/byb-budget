@@ -157,6 +157,7 @@ export function TransactionsView({
   const txFormProps = {
     tx: editingTx,
     categories,
+    transactionHistory: transactions,
     activeUserId,
     onSave: saveTx,
     onTransfer: (data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); closeEditor(); },
@@ -253,6 +254,21 @@ export function TransactionsView({
       </span>
     </div>
   );
+
+  const filteredSpendCard = hasRange ? (
+    <div
+      style={{ ...styles.card, padding: mobile ? "14px 16px" : "16px 20px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, borderLeft: `4px solid ${PALETTE.primary}` }}
+      data-testid="filtered-spend-total"
+    >
+      <div>
+        <div style={styles.kpiLabel}>Total spent in filtered period</div>
+        <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>{scopeLabel}</div>
+      </div>
+      <div style={{ fontSize: mobile ? 24 : 28, fontWeight: 800, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+        {fmtAUD(filteredExpense)}
+      </div>
+    </div>
+  ) : null;
 
   const loadMoreLabel = `Show earlier months (${hiddenMonths} more)`;
   const noRows = filteredTx.length === 0 && adjustments.length === 0;
@@ -356,6 +372,8 @@ export function TransactionsView({
           </div>
         </div>
       )}
+
+      {filteredSpendCard}
 
       {/* Desktop keeps the inline panel, the same decision DEC-011 made for the
           transaction editor. The phone's copy is a sheet, rendered after the

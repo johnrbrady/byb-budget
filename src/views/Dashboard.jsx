@@ -128,7 +128,7 @@ export function Dashboard({
 
       {/* Transaction form inline */}
       {txFormOpen && (
-        <TxForm tx={null} categories={categories} activeUserId={activeUserId} onSave={(tx) => { onAddTx(tx); setTxFormOpen(false); }} onTransfer={(data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); setTxFormOpen(false); }} onCancel={() => setTxFormOpen(false)} styles={styles} />
+        <TxForm tx={null} categories={categories} transactionHistory={transactions} activeUserId={activeUserId} onSave={(tx) => { onAddTx(tx); setTxFormOpen(false); }} onTransfer={(data) => { onTransferEnvelope(data.fromId, data.toId, data.amount, data.description); setTxFormOpen(false); }} onCancel={() => setTxFormOpen(false)} styles={styles} />
       )}
 
       {/* Envelopes list */}

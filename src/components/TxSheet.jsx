@@ -21,12 +21,13 @@ import { TxForm } from "./forms.jsx";
 // that is the surface, and a bordered card within it would be a box in a box.
 const FORM_IN_SHEET = { background: "transparent", border: "none", boxShadow: "none", padding: 0, marginBottom: 0 };
 
-export function TxSheet({ tx, categories, activeUserId, defaultCategoryId, onSave, onTransfer, onDelete, onClose, styles }) {
+export function TxSheet({ tx, categories, transactionHistory, activeUserId, defaultCategoryId, onSave, onTransfer, onDelete, onClose, styles }) {
   return (
     <Sheet title={tx ? "Edit transaction" : "Add transaction"} onClose={onClose} styles={styles} testId="tx-edit-sheet">
       <TxForm
         tx={tx}
         categories={categories}
+        transactionHistory={transactionHistory}
         activeUserId={activeUserId}
         onSave={onSave}
         onTransfer={onTransfer}

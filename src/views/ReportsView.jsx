@@ -299,10 +299,19 @@ My transactions and bank statement:
   // Pie chart month — follows the global month selector but can be overridden
   const allMonths = Array.from(new Set([...transactions.map((t) => monthKey(t.date)), activeMonth])).sort().reverse();
   const [pieMonth, setPieMonth] = useState(activeMonth || allMonths[0] || todayISO().slice(0, 7));
+  const [piePeriod, setPiePeriod] = useState("month");
   useEffect(() => { if (activeMonth) setPieMonth(activeMonth); }, [activeMonth]);
 
   const clamped = normaliseRange(reportRange);
   const rangeTx = filterTransactions(transactions, clamped);
+  const distributionTx = piePeriod === "month"
+    ? filterTransactions(transactions, { month: pieMonth, type: "expense" })
+    : filterTransactions(transactions, { ...clamped, type: "expense" });
+  const distributionData = categories.filter((category) => category.type === "expense").map((category) => ({
+    label: category.name,
+    colour: category.colour,
+    value: totals(filterTransactions(distributionTx, { categoryId: category.id, type: "expense" })).expense,
+  })).filter((entry) => entry.value > 0);
   const { income, expense: expenses, net } = totals(rangeTx);
 
   const daysInRange = Math.max(1, Math.round((new Date(clamped.end) - new Date(clamped.start)) / 86400000) + 1);
@@ -443,35 +452,43 @@ My transactions and bank statement:
         <div style={{ ...styles.card, gridColumn: styles.isMobile ? "span 2" : "auto" }}><div style={styles.kpiLabel}>Top category</div><div style={{ ...styles.kpiValue, fontSize: 16 }}>{topCat}</div></div>
       </div>
 
-      {/* Pie charts */}
-      <div style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr" : "1fr 1fr", gap: styles.isMobile ? 16 : 20, marginBottom: styles.isMobile ? 16 : 24 }}>
-        <div style={styles.card}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-            <div style={{ ...styles.sectionTitle, margin: 0 }}>Monthly distribution</div>
-            <select style={{ ...styles.monthSelect }} value={pieMonth} onChange={(e) => setPieMonth(e.target.value)}>
-              {allMonths.map((m) => <option key={m} value={m}>{formatMonth(m)}</option>)}
-            </select>
+      {/* One distribution chart with an explicit month or any custom period. */}
+      <div style={{ ...styles.card, marginBottom: styles.isMobile ? 16 : 24 }} data-testid="spending-distribution-card">
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ ...styles.sectionTitle, margin: 0 }}>Spending distribution</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div>
+              <label htmlFor="distribution-period" style={{ ...styles.label, display: "block" }}>Show</label>
+              <select id="distribution-period" aria-label="Distribution period" data-testid="distribution-period" style={styles.input} value={piePeriod} onChange={(event) => setPiePeriod(event.target.value)}>
+                <option value="month">One month</option>
+                <option value="range">Custom dates</option>
+              </select>
+            </div>
+            {piePeriod === "month" ? (
+              <div>
+                <label htmlFor="distribution-month" style={{ ...styles.label, display: "block" }}>Month</label>
+                <select id="distribution-month" aria-label="Distribution month" data-testid="distribution-month" style={{ ...styles.monthSelect, minHeight: 42 }} value={pieMonth} onChange={(event) => setPieMonth(event.target.value)}>
+                  {allMonths.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label htmlFor="distribution-from" style={{ ...styles.label, display: "block" }}>From</label>
+                  <input id="distribution-from" aria-label="Distribution from" data-testid="distribution-from" style={styles.input} type="date" value={reportRange.start} onChange={(event) => setReportRange({ ...reportRange, start: event.target.value })} />
+                </div>
+                <div>
+                  <label htmlFor="distribution-to" style={{ ...styles.label, display: "block" }}>To</label>
+                  <input id="distribution-to" aria-label="Distribution to" data-testid="distribution-to" style={styles.input} type="date" value={reportRange.end} onChange={(event) => setReportRange({ ...reportRange, end: event.target.value })} />
+                </div>
+              </>
+            )}
           </div>
-          <PieChart
-            size={160}
-            data={categories.filter((c) => c.type === "expense").map((c) => ({
-              label: c.name,
-              colour: c.colour,
-              value: totals(filterTransactions(transactions, { month: pieMonth, categoryId: c.id, type: "expense" })).expense,
-            })).filter((d) => d.value > 0)}
-          />
         </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.sectionTitle, margin: "0 0 12px 0" }}>Full period distribution</div>
-          <PieChart
-            size={160}
-            data={categories.filter((c) => c.type === "expense").map((c) => ({
-              label: c.name,
-              colour: c.colour,
-              value: totals(filterTransactions(rangeTx, { categoryId: c.id, type: "expense" })).expense,
-            })).filter((d) => d.value > 0)}
-          />
+        <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 8 }} data-testid="distribution-scope">
+          {piePeriod === "month" ? formatMonth(pieMonth) : `${clamped.start || "the beginning"} → ${clamped.end || "today"}`}
         </div>
+        <PieChart size={180} data={distributionData} />
       </div>
 
       <div style={styles.sectionTitle}>Monthly trend</div>

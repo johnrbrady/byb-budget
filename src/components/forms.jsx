@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { PALETTE, SAVINGS_CAT } from "../lib/constants.js";
 import { centsToInput, fmtAUD, parseAUDToCents, todayISO } from "../lib/utils.js";
+import { descriptionSuggestions } from "../lib/descriptionSuggestions.js";
 
 const inputCents = (value, options) => {
   try { return parseAUDToCents(value, options); } catch { return null; }
@@ -10,7 +11,7 @@ const inputCents = (value, options) => {
 // same form can be a card in the page or the body of a bottom sheet without a
 // second copy of it existing. Nothing below it reads `style`; the allocation
 // rules are untouched by it.
-export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCancel, styles, defaultCategoryId, defaultType, style }) {
+export function TxForm({ tx, categories, transactionHistory = [], activeUserId, onSave, onTransfer, onCancel, styles, defaultCategoryId, defaultType, style }) {
   const defaultCat = defaultCategoryId ? categories.find((c) => c.id === defaultCategoryId) : null;
   // `allocations` records where an income transaction's money actually went and
   // is the only thing the balance arithmetic reads, so the "Allocate to
@@ -35,6 +36,11 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
       }
   );
   const expenseCats = categories.filter((c) => c.type === "expense");
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const suggestedDescriptions = useMemo(
+    () => descriptionSuggestions(transactionHistory, form.description, { type: form.type }),
+    [transactionHistory, form.description, form.type]
+  );
   // A split across several envelopes cannot be shown in a single select, and
   // collapsing it into one envelope — or dropping it — would move the household's
   // money. It is shown read-only and carried through the save untouched; the
@@ -124,7 +130,44 @@ export function TxForm({ tx, categories, activeUserId, onSave, onTransfer, onCan
           )}
         </>
       )}
-      <div style={{ gridColumn: mobile ? "span 2" : "span 2" }}><div style={styles.label}>Description</div><input style={styles.input} value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="tx-description" /></div>
+      <div style={{ gridColumn: mobile ? "span 2" : "span 2", position: "relative" }}>
+        <div style={styles.label}>Description</div>
+        <input
+          style={styles.input}
+          value={form.description || ""}
+          onChange={(e) => { setForm({ ...form, description: e.target.value }); setDescriptionOpen(true); }}
+          onFocus={() => setDescriptionOpen(true)}
+          onBlur={() => setDescriptionOpen(false)}
+          autoComplete="off"
+          aria-autocomplete="list"
+          aria-controls="tx-description-suggestions"
+          aria-expanded={descriptionOpen && suggestedDescriptions.length > 0}
+          data-testid="tx-description"
+        />
+        {descriptionOpen && suggestedDescriptions.length > 0 && (
+          <div
+            id="tx-description-suggestions"
+            role="listbox"
+            aria-label="Previous descriptions"
+            style={{ position: "absolute", zIndex: 20, left: 0, right: 0, top: "100%", marginTop: 4, padding: 4, border: `1px solid ${styles.border}`, borderRadius: "var(--byb-radius-sm)", background: styles.surface, boxShadow: "var(--byb-elev-2)", maxHeight: 210, overflowY: "auto" }}
+          >
+            {suggestedDescriptions.map((description) => (
+              <button
+                key={description.toLocaleLowerCase()}
+                type="button"
+                role="option"
+                aria-selected="false"
+                onMouseDown={(e) => e.preventDefault()}
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => { setForm({ ...form, description }); setDescriptionOpen(false); }}
+                style={{ display: "block", width: "100%", minHeight: 40, padding: "8px 10px", border: "none", borderRadius: "var(--byb-radius-sm)", background: "transparent", color: styles.text, textAlign: "left", font: "inherit", cursor: "pointer" }}
+              >
+                {description}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div style={{ gridColumn: mobile ? "span 2" : `span ${isIncome ? 6 : 5}`, display: "flex", alignItems: "end", gap: 8 }}>
         <button type="submit" style={{ ...styles.button, flex: mobile ? 1 : "none" }} data-testid="tx-save">Save</button>
         <button type="button" style={{ ...styles.buttonGhost, flex: mobile ? 1 : "none" }} onClick={onCancel}>Cancel</button>

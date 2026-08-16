@@ -56,13 +56,14 @@ describe("per-category spending trends", () => {
     expect(within(groceries).getByTestId("spending-bar-2026-06")).toHaveAttribute("data-value", "7500");
   });
 
-  test("reveals categories progressively with a working non-observer fallback", () => {
+  test("shows one chart at a time and lets the user choose another category", () => {
     renderTrends();
 
-    expect(screen.getAllByTestId(/^category-spending-/)).toHaveLength(4);
-    fireEvent.click(screen.getByRole("button", { name: "Show more categories (2)" }));
-    expect(screen.getAllByTestId(/^category-spending-/)).toHaveLength(6);
-    expect(screen.queryByRole("button", { name: /Show more categories/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Category to chart" })).toHaveValue("c-groceries");
+    expect(screen.getAllByTestId(/^category-spending-c-/)).toHaveLength(1);
+    fireEvent.change(screen.getByRole("combobox", { name: "Category to chart" }), { target: { value: "c-electricity" } });
+    expect(screen.queryByTestId("category-spending-c-groceries")).not.toBeInTheDocument();
+    expect(screen.getByTestId("category-spending-c-electricity")).toBeInTheDocument();
   });
 
   test("a category section drills through to its transaction history", () => {
@@ -74,6 +75,7 @@ describe("per-category spending trends", () => {
 
   test("an envelope with no spending gets an honest compact state, not a made-up chart scale", () => {
     renderTrends();
+    fireEvent.change(screen.getByRole("combobox", { name: "Category to chart" }), { target: { value: "c-fuel" } });
     const fuel = screen.getByTestId("category-spending-c-fuel");
     expect(within(fuel).getByRole("img", { name: /Fuel spending by month: no spending/i })).toHaveTextContent("No spending in this period");
     expect(within(fuel).queryByText("$1.00")).not.toBeInTheDocument();

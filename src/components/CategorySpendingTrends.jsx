@@ -1,9 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { fmtAUD, formatMonth, todayISO } from "../lib/utils.js";
 import { categorySpendingReport } from "../lib/reporting.js";
 import { MonthlyBarChart } from "./MonthlyBarChart.jsx";
-
-const PAGE_SIZE = 4;
 
 function Comparison({ report, styles }) {
   const latest = report.series[report.series.length - 1].month;
@@ -69,24 +67,24 @@ function CategorySection({ report, onNavigateToCategory, styles }) {
 
 export function CategorySpendingTrends({ transactions, categories, activeMonth, onNavigateToCategory, styles }) {
   const [months, setMonths] = useState(5);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const sentinelRef = useRef(null);
+  const initialCategoryId = categories.find((category) => category.type === "expense" && category.name.toLocaleLowerCase() === "groceries")?.id
+    || categories.find((category) => category.type === "expense")?.id
+    || "";
+  const [selectedCategoryId, setSelectedCategoryId] = useState(initialCategoryId);
   const endMonth = activeMonth || todayISO().slice(0, 7);
   const reports = useMemo(
     () => categorySpendingReport(transactions, categories, { endMonth, months }),
     [transactions, categories, endMonth, months],
   );
-  const hasMore = visibleCount < reports.length;
+  const selectedReport = reports.find((report) => report.category.id === selectedCategoryId) || null;
 
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [months, endMonth]);
   useEffect(() => {
-    if (!hasMore || typeof IntersectionObserver !== "function" || !sentinelRef.current) return undefined;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) setVisibleCount((count) => Math.min(count + PAGE_SIZE, reports.length));
-    }, { rootMargin: "180px" });
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, reports.length, visibleCount]);
+    if (selectedReport || reports.length === 0) return;
+    const groceries = reports.find((report) => report.category.name.toLocaleLowerCase() === "groceries");
+    setSelectedCategoryId((groceries || reports[0]).category.id);
+  }, [reports, selectedReport]);
+
+  const categoryOptions = reports.slice().sort((a, b) => a.category.name.localeCompare(b.category.name));
 
   return (
     <div>
@@ -109,17 +107,25 @@ export function CategorySpendingTrends({ transactions, categories, activeMonth, 
       <div style={{ color: styles.textMuted, fontSize: 12, lineHeight: 1.5, margin: "-4px 0 12px" }}>
         Spending only. BYB does not yet retain past budget amounts, so these charts compare what left each envelope, not whether it was over or under budget.
       </div>
-      {reports.slice(0, visibleCount).map((report) => (
-        <CategorySection key={report.category.id} report={report} onNavigateToCategory={onNavigateToCategory} styles={styles} />
-      ))}
-      {reports.length === 0 && <div style={{ ...styles.card, color: styles.textMuted }}>No expense categories yet.</div>}
-      {hasMore && (
-        <div ref={sentinelRef} style={{ display: "flex", justifyContent: "center", padding: "4px 0 12px" }}>
-          <button style={styles.buttonGhost} onClick={() => setVisibleCount((count) => Math.min(count + PAGE_SIZE, reports.length))}>
-            Show more categories ({reports.length - visibleCount})
-          </button>
+      {reports.length > 0 && (
+        <div style={{ ...styles.card, padding: 12, marginBottom: 12 }}>
+          <label htmlFor="category-spending-select" style={{ ...styles.label, display: "block", marginBottom: 5 }}>Category to chart</label>
+          <select
+            id="category-spending-select"
+            aria-label="Category to chart"
+            data-testid="category-spending-select"
+            style={styles.input}
+            value={selectedReport?.category.id || ""}
+            onChange={(event) => setSelectedCategoryId(event.target.value)}
+          >
+            {categoryOptions.map((report) => <option key={report.category.id} value={report.category.id}>{report.category.name}</option>)}
+          </select>
         </div>
       )}
+      {selectedReport && (
+        <CategorySection report={selectedReport} onNavigateToCategory={onNavigateToCategory} styles={styles} />
+      )}
+      {reports.length === 0 && <div style={{ ...styles.card, color: styles.textMuted }}>No expense categories yet.</div>}
     </div>
   );
 }

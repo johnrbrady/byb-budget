@@ -21,7 +21,7 @@ export function PieChart({ data, size = 180 }) {
       </svg>
       <div style={{ flex: 1, minWidth: 120 }}>
         {segments.map((s, i) => (
-          <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}>
+          <div key={i} data-testid="pie-legend-item" data-label={s.label} data-value={s.value} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}>
             <span style={{ width: 10, height: 10, borderRadius: "50%", background: s.colour, flexShrink: 0 }} />
             <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span>
             <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{s.pct.toFixed(1)}%</span>

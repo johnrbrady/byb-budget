@@ -74,12 +74,16 @@ under `src/`.
   Every run is recorded in the reconcile history (Reports).
 - **Recurring** — weekly/fortnightly/monthly rules; due rules post with one
   click and advance their next-due date.
-- **Reports** — net worth (manual asset snapshots), summary and pie charts,
-  progressive per-envelope spending sections with five-month or one-year bar
-  charts and month-over-month comparisons (click through to transactions),
+- **Reports** — net worth (manual asset snapshots), summary and a distribution
+  pie that switches between one month and any custom date range, plus one
+  selectable envelope spending chart (Groceries by default) with five-month or
+  one-year bars and month-over-month comparisons (click through to transactions),
   transfers and reconcile logs, XLSX export, and AI-assisted bank-statement
   import (JSON paste). Historical budget amounts are not yet recorded, so the
   envelope charts compare spending rather than budget performance.
+- **Transaction filters** — explicit From/To dates show a prominent total spent
+  for the exact filtered result. Transaction descriptions suggest previously
+  used household entries as the user types; the history stays local.
 
 ## Data & persistence
 
