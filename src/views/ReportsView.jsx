@@ -3,8 +3,9 @@ import { PALETTE } from "../lib/constants.js";
 import { fmtAUD, monthKey, todayISO, formatMonth } from "../lib/utils.js";
 import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { PieChart } from "../components/PieChart.jsx";
+import { CategorySpendingTrends } from "../components/CategorySpendingTrends.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
-import { IconHistory, IconWallet, IconChart } from "../components/Icons.jsx";
+import { IconHistory, IconWallet } from "../components/Icons.jsx";
 
 function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   const [editing, setEditing] = useState(false);
@@ -324,8 +325,6 @@ My transactions and bank statement:
   const monthlyTrend = groupByMonth(rangeTx).reverse();
   const maxTrend = Math.max(1, ...monthlyTrend.flatMap((m) => [m.income, m.expense]));
 
-  const goToCategory = (catId) => { if (onNavigateToCategory && catId) onNavigateToCategory(catId); };
-
   return (
     <div>
       {/* Net Worth / Assets section */}
@@ -501,58 +500,13 @@ My transactions and bank statement:
         {monthlyTrend.length === 0 && <div style={{ color: styles.textMuted, fontSize: 13 }}>No data in this range.</div>}
       </div>
 
-      <div style={styles.sectionTitle}>Category breakdown</div>
-      {styles.isMobile ? (
-        <div>
-          {breakdown.map((b) => (
-            <div key={b.cat?.id || "unknown"} style={{ ...styles.txCard, cursor: b.cat ? "pointer" : "default" }} onClick={() => goToCategory(b.cat?.id)}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <span style={styles.pill(b.cat?.colour || "#999")}>{b.cat?.name || "Unknown"}</span>
-                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 15 }}>{fmtAUD(b.total)}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
-                <span>{b.pct.toFixed(1)}% of total</span>
-                <span>{b.count}× · avg {fmtAUD(b.avg)}</span>
-              </div>
-            </div>
-          ))}
-          {breakdown.length === 0 && (
-            <div style={{ ...styles.card, padding: 0 }}>
-              <EmptyState icon={IconChart} title="No expenses in range." hint="Widen the date range above, or log some spending, and the breakdown appears here." styles={styles} />
-            </div>
-          )}
-        </div>
-      ) : (
-        <div style={styles.card}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Category</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>Total</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>%</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>Avg</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {breakdown.map((b) => (
-                <tr key={b.cat?.id || "unknown"} className="byb-hover-row" style={{ cursor: b.cat ? "pointer" : "default" }} onClick={() => goToCategory(b.cat?.id)} title={b.cat ? `View ${b.cat.name} transactions` : undefined}>
-                  <td style={styles.td}><span style={styles.pill(b.cat?.colour || "#999")}>{b.cat?.name || "Unknown"}</span></td>
-                  <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtAUD(b.total)}</td>
-                  <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{b.pct.toFixed(1)}%</td>
-                  <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtAUD(b.avg)}</td>
-                  <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{b.count}</td>
-                </tr>
-              ))}
-              {breakdown.length === 0 && (
-                <tr><td style={{ ...styles.td, padding: 0 }} colSpan={5}>
-                  <EmptyState icon={IconChart} title="No expenses in range." hint="Widen the date range above, or log some spending, and the breakdown appears here." styles={styles} />
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <CategorySpendingTrends
+        transactions={transactions}
+        categories={categories}
+        activeMonth={activeMonth}
+        onNavigateToCategory={onNavigateToCategory}
+        styles={styles}
+      />
 
       {/* Reconcile history */}
       <div style={{ ...styles.sectionTitle, display: "flex", alignItems: "center", gap: 6 }}><IconHistory size={14} /> Reconcile history</div>

@@ -73,9 +73,12 @@ under `src/`.
   Every run is recorded in the reconcile history (Reports).
 - **Recurring** — weekly/fortnightly/monthly rules; due rules post with one
   click and advance their next-due date.
-- **Reports** — net worth (manual asset snapshots), trends, category
-  breakdowns (click through to transactions), transfers and reconcile logs,
-  XLSX export, AI-assisted bank-statement import (JSON paste).
+- **Reports** — net worth (manual asset snapshots), summary and pie charts,
+  progressive per-envelope spending sections with five-month or one-year bar
+  charts and month-over-month comparisons (click through to transactions),
+  transfers and reconcile logs, XLSX export, and AI-assisted bank-statement
+  import (JSON paste). Historical budget amounts are not yet recorded, so the
+  envelope charts compare spending rather than budget performance.
 
 ## Data & persistence
 
