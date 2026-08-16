@@ -1,0 +1,5 @@
+# Shell scripts are run by the TrueNAS host, which is Linux. This repository is
+# edited on Windows with core.autocrlf=true, and a CRLF on the `#!` line turns
+# into a "bad interpreter" error on the NAS that reads like nothing at all to do
+# with line endings. Pin them.
+*.sh text eol=lf

@@ -36,6 +36,9 @@ Budget App/
 ├── Dockerfile                 ← production image (build + serve)
 ├── docker-compose.yml         ← TrueNAS-friendly deployment
 ├── .env.example               ← server configuration reference
+├── byb-backup.sh              ← scheduled, verified backup of every instance
+├── byb-restore.sh             ← restore one instance from a backup
+├── BACKUP.md                  ← backup/restore: install, verify, recover
 ├── UPDATE-NOTES.md            ← what changed in the latest update
 ├── public/                    ← logo, manifest, service worker (sw.js)
 └── src/
@@ -85,7 +88,13 @@ All data lives in `data/` next to `server.js` (or `BYB_DATA_DIR`):
 - `passwords.json` — bcrypt hashes. First sign-in sets the password.
 - `sessions.json` — bearer tokens with expiry (default 72 h).
 
-Back up the `data/` directory and you have everything.
+Back up the `data/` directory and you have everything. On TrueNAS that is done
+by `byb-backup.sh`, which backs up every household's `budget.json` and
+`passwords.json` on a schedule, verifies what it wrote, and rotates history —
+see **[BACKUP.md](BACKUP.md)** for installing it as a cron job, confirming it is
+still running, and restoring. Restoring is not simply "copy the file back":
+`byb-restore.sh` also has to invalidate sessions, or a browser still holding the
+old data can silently overwrite the restore. BACKUP.md explains why.
 
 ## Authentication
 
