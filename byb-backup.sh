@@ -495,7 +495,8 @@ fi
 
 # ── Result ──────────────────────────────────────────────────────────────────
 
-{
+LAST_RUN_TMP="$DEST/.last-run.$$"
+if {
   printf '%s\n' "run_id=$RUN_ID"
   printf '%s\n' "status=$RUN_STATUS"
   printf '%s\n' "finished=$FINISHED"
@@ -503,9 +504,16 @@ fi
   printf '%s\n' "instances_ok=$OK_COUNT"
   printf '%s\n' "instances_failed=$TOTAL_FAILURES"
   printf '%s\n' "run_dir=$RUN_DIR"
-} > "$LAST_RUN_FILE" 2>/dev/null || warn "byb-backup: could not update '$LAST_RUN_FILE' (staleness checks will not see this run)"
+} > "$LAST_RUN_TMP" 2>/dev/null && [ ! -d "$LAST_RUN_FILE" ] && mv "$LAST_RUN_TMP" "$LAST_RUN_FILE" 2>/dev/null; then
+  LAST_RUN_WRITE_OK=1
+else
+  rm -f "$LAST_RUN_TMP" 2>/dev/null
+  LAST_RUN_WRITE_OK=0
+  warn "byb-backup: could not update '$LAST_RUN_FILE' (staleness checks will not see this run)"
+fi
 
 if [ "$TOTAL_FAILURES" -eq 0 ]; then
+  [ "$LAST_RUN_WRITE_OK" -eq 1 ] || die 1 "the data backup verified, but '$LAST_RUN_FILE' could not be updated. The scheduled health check would be blind, so this run is not reported as successful."
   say "byb-backup: OK — $OK_COUNT instance(s) backed up and verified into $RUN_DIR"
   exit 0
 fi
