@@ -944,7 +944,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           onLogout={handleLogout}
           styles={styles}
         />
-        <div style={styles.content} data-swipe-surface {...swipe.handlers}>
+        <div style={styles.content} data-swipe-surface ref={swipe.surfaceRef} {...swipe.handlers}>
           <div className="byb-swipe-track" ref={swipe.trackRef}>
             <div key={view} className={viewAnim === "none" ? undefined : viewAnim ? `byb-view-${viewAnim}` : "byb-view"}>
               {view === "dashboard" && (

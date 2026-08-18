@@ -59,6 +59,11 @@ const prefersReducedMotion = () =>
  */
 export function useSwipeNavigation({ enabled = true, index, count, onNavigate, ignore = "" }) {
   const trackRef = useRef(null);
+  // The DOM node touchstart/touchmove/touchend are bound to (data-swipe-surface
+  // in BudgetApp.jsx). Holds the node itself so the surfaceRef callback below
+  // can find the previous element to unbind from — trackRef is what the
+  // gesture actually moves.
+  const surfaceEl = useRef(null);
 
   // Gesture state is a ref, not state: none of it should cause a render.
   const g = useRef({ active: false, axis: null, startX: 0, startY: 0, dx: 0, lastX: 0, lastT: 0, v: 0, animating: false });
@@ -153,6 +158,20 @@ export function useSwipeNavigation({ enabled = true, index, count, onNavigate, i
       }
     }
 
+    // Hold the axis against native scrolling. touch-action: pan-y (buildStyles.js)
+    // lets the browser start a native vertical pan on its own timetable, without
+    // waiting for this handler, the moment early finger travel looks even
+    // slightly vertical — which is nearly every real swipe's first frame or two
+    // once the page is scrolled and there is somewhere for a pan to go. By the
+    // time the axis above has actually locked "h", the browser may already have
+    // claimed the gesture, and once it has, nothing here can take it back. What
+    // preventDefault CAN still do is stop that claim on every subsequent frame
+    // of this same gesture — including the one that just locked — so the browser
+    // is not free to (re)commit to a vertical pan while this drag continues. A
+    // "v" axis already returned above without reaching here, and an undecided
+    // one returned even earlier: only a swipe ever cancels anything.
+    if (g.current.axis === "h" && e.cancelable) e.preventDefault();
+
     const dt = now() - g.current.lastT;
     if (dt >= 1) {
       g.current.v = (t.clientX - g.current.lastX) / dt;
@@ -168,6 +187,31 @@ export function useSwipeNavigation({ enabled = true, index, count, onNavigate, i
     const blocked = (dx < 0 && i >= n - 1) || (dx > 0 && i <= 0);
     setX(blocked ? dx * EDGE_RESISTANCE : dx, 0);
   }, []);
+
+  // touchmove is bound here, natively and non-passively, instead of through the
+  // JSX handlers below. React itself attaches touchmove as a passive listener
+  // (see the touch-action comment on `content` in buildStyles.js) — inside a
+  // passive listener e.preventDefault() is a silently-ignored no-op, so the
+  // conditional call above would do nothing if this were an onTouchMove prop.
+  // { passive: false } is what makes it live. touchstart/end/cancel stay as
+  // ordinary JSX handlers in the object returned below: none of them ever calls
+  // preventDefault, so passive (React's default) costs them nothing.
+  //
+  // A callback ref, not a plain ref plus a mount-time effect: BudgetApp only
+  // renders this surface once the shell replaces the login screen, which can
+  // happen on the first render (a token already in localStorage) or many
+  // renders later (signing in fresh, with no reload in between). A useEffect
+  // keyed on this stable, empty-deps onTouchMove would run exactly once and
+  // could easily take that one run before the surface ever exists — after
+  // which its unchanging dependency array would never fire it again for the
+  // rest of the session. A callback ref instead runs exactly when the DOM
+  // node itself appears or disappears, whichever render that turns out to be,
+  // so login timing cannot skip it.
+  const surfaceRef = useCallback((el) => {
+    if (surfaceEl.current) surfaceEl.current.removeEventListener("touchmove", onTouchMove);
+    surfaceEl.current = el;
+    if (el) el.addEventListener("touchmove", onTouchMove, { passive: false });
+  }, [onTouchMove]);
 
   const settle = useCallback((committed, dir) => {
     const { index: i, onNavigate: go } = latest.current;
@@ -236,5 +280,8 @@ export function useSwipeNavigation({ enabled = true, index, count, onNavigate, i
     settle(false, 0);
   }, [settle]);
 
-  return { trackRef, handlers: { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } };
+  // onTouchMove is not in here: the surfaceRef callback above binds it
+  // imperatively so it can be non-passive, instead of spreading it onto the
+  // JSX element with the rest.
+  return { trackRef, surfaceRef, handlers: { onTouchStart, onTouchEnd, onTouchCancel } };
 }

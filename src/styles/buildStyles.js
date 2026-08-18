@@ -100,8 +100,11 @@ export function buildStyles(theme, isMobile = false) {
     content: {
       flex: 1, padding: T.contentPad, maxWidth: 1200, width: "100%", margin: "0 auto", boxSizing: "border-box",
       // Vertical scrolling stays native and smooth while the horizontal axis is
-      // left to the tab swipe. React attaches touchmove passively, so
-      // preventDefault is not available to hold the axis — this is.
+      // left to the tab swipe. React attaches touchmove passively, so this
+      // touch-action is necessary but not sufficient on its own once the page
+      // is scrolled — useSwipeNavigation also binds its own non-passive
+      // touchmove on this element (see its surfaceRef effect) and calls
+      // preventDefault once the axis locks horizontal.
       touchAction: "pan-y",
     },
     footer: isMobile

@@ -367,6 +367,189 @@ describe("Swipe between tabs", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Holding the axis against native scrolling.
+//
+// touch-action: pan-y (buildStyles.js) lets the browser start a native
+// vertical pan on its own, without asking the page, the moment early travel
+// looks even slightly vertical — which is why a swipe that starts scrolled
+// into a long list used to die: by the time useSwipeNavigation's own axis
+// lock declared the gesture horizontal, the browser could already have
+// claimed it, and no amount of JS wins that back through a passive listener.
+//
+// useSwipeNavigation now binds its own touchmove on the swipe surface
+// natively, with { passive: false }, and calls preventDefault the instant the
+// axis is "h" — on every frame that follows, not just the one that locked it,
+// since each touchmove is a separate event and the browser only honours a
+// preventDefault called on that specific one. These tests exercise that
+// mechanism directly: real jsdom events, dispatched through addEventListener/
+// dispatchEvent rather than React's synthetic layer, reading the real
+// `defaultPrevented` the browser itself would consult. What they cannot prove
+// — nothing running outside a real touchscreen compositor can — is that
+// winning this race is enough on every device; see the package report.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Holding the axis against native scrolling (non-passive touchmove)", () => {
+  beforeEach(() => { global.setMobileViewport(); });
+
+  // Built by hand, not via fireEvent.touchMove, so the test can read
+  // `defaultPrevented` off the very same event object after it is dispatched.
+  // cancelable: true matches every real touchmove; bubbles: true matches
+  // fireEvent's own default and lets it bubble from a card up to the surface,
+  // exactly as it does on a phone.
+  function moveEvent(x, y) {
+    const ev = new Event("touchmove", { bubbles: true, cancelable: true });
+    ev.touches = [{ clientX: x, clientY: y }];
+    return ev;
+  }
+
+  test("does not preventDefault while the axis is still undecided", async () => {
+    renderApp();
+    await settle();
+    goToEnvelopes();
+
+    const card = document.querySelector("[data-env-id='c-a']");
+    fireEvent.touchStart(card, { touches: [{ clientX: 300, clientY: 400 }] });
+    // 4px across, 3px down — under AXIS_LOCK_PX (10). The gesture has not
+    // declared itself yet, so nothing may be cancelled.
+    const ev = moveEvent(304, 403);
+    fireEvent(card, ev);
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
+  test("does not preventDefault once the axis locks vertical", async () => {
+    renderApp();
+    await settle();
+    goToEnvelopes();
+
+    const card = document.querySelector("[data-env-id='c-a']");
+    fireEvent.touchStart(card, { touches: [{ clientX: 300, clientY: 400 }] });
+    // 5px across, 20px down — past AXIS_LOCK_PX, and dx is nowhere near
+    // AXIS_RATIO x dy: a scroll, not a swipe. Native scrolling must be left
+    // completely alone.
+    const ev = moveEvent(305, 420);
+    fireEvent(card, ev);
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
+  test("preventDefaults the instant the axis locks horizontal", async () => {
+    renderApp();
+    await settle();
+    goToEnvelopes();
+
+    const card = document.querySelector("[data-env-id='c-a']");
+    fireEvent.touchStart(card, { touches: [{ clientX: 300, clientY: 400 }] });
+    // 20px across, 2px down — past AXIS_LOCK_PX and well clear of AXIS_RATIO:
+    // a swipe. This is the exact frame the axis locks "h".
+    const ev = moveEvent(280, 402);
+    fireEvent(card, ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  test("keeps preventDefaulting on every later frame of the same horizontal drag", async () => {
+    renderApp();
+    await settle();
+    goToEnvelopes();
+
+    const card = document.querySelector("[data-env-id='c-a']");
+    fireEvent.touchStart(card, { touches: [{ clientX: 300, clientY: 400 }] });
+    fireEvent(card, moveEvent(280, 402)); // locks "h"
+
+    const laterMove = moveEvent(240, 404);
+    fireEvent(card, laterMove);
+    expect(laterMove.defaultPrevented).toBe(true);
+  });
+
+  test("a swipe that starts on an envelope card still navigates (defaultPrevented does not also block the app's own handling)", async () => {
+    renderApp();
+    await settle();
+    goToEnvelopes();
+
+    const card = document.querySelector("[data-env-id='c-a']");
+    drag(card);
+    await waitFor(() => expect(currentView()).toBe("recurring"));
+  });
+
+  test("touchmove is bound on the swipe surface itself, non-passively", async () => {
+    // window.HTMLElement.prototype, not the element instance: the listener is
+    // attached from inside a useEffect, which runs after this component
+    // mounts, so the spy has to be in place before renderApp() rather than
+    // attached to an element reference grabbed afterwards.
+    const addSpy = jest.spyOn(window.HTMLElement.prototype, "addEventListener");
+    try {
+      renderApp();
+      await settle();
+      const surface = swipeSurface();
+
+      const idx = addSpy.mock.calls.findIndex(
+        ([type], i) => type === "touchmove" && addSpy.mock.contexts[i] === surface
+      );
+      // Found at all: touchmove is bound on the surface via addEventListener,
+      // not left to React's synthetic (JSX prop) handling.
+      expect(idx).toBeGreaterThan(-1);
+      // The option the whole fix rests on: without { passive: false } the
+      // browser is free to ignore preventDefault and consult this handler for
+      // its side effects only, exactly like every other passive listener.
+      expect(addSpy.mock.calls[idx][2]).toMatchObject({ passive: false });
+    } finally {
+      addSpy.mockRestore();
+    }
+  });
+
+  // Every other test in this file pre-seeds byb_token in beforeEach, so
+  // BudgetApp's first-ever render is already authenticated and surfaceRef's
+  // DOM node exists from render #1. A genuinely fresh sign-in is different:
+  // BudgetApp's first render shows LoginPage — no data-swipe-surface exists
+  // yet at all — and the shell (and the surface) mounts for the first time
+  // only several renders later, once handleLogin's setAuthToken resolves.
+  // (In the deployed app this is normally masked by main.jsx: it forces a full
+  // remount, via a key bump, after every login. That is a property of
+  // main.jsx's reload wiring, not of this hook — a plain useEffect + ref tied
+  // to onTouchMove's stable, empty deps array would run exactly once and, on
+  // this path, could take that one run before the surface existed, wiring
+  // nothing for the rest of the session. This test bypasses main.jsx
+  // entirely, mounting BudgetApp directly the way every test in this file
+  // does, specifically so a hook that only happens to work because its caller
+  // remounts it cannot pass by accident.)
+  test("still binds touchmove when the surface mounts after first render, not on it (fresh sign-in, no remount)", async () => {
+    localStorage.clear(); // no token — BudgetApp's first render is unauthenticated
+    global.fetch.mockImplementation((url) => {
+      if (String(url).includes("/api/auth/login")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ token: "tok-123", userId: "u-user1" }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+    });
+
+    render(
+      <BudgetApp
+        initialData={{
+          users: baseUsers, transactions: [], recurring: [], assets: [], transfers: [],
+          reconcileLog: [], unallocatedBalance: 0,
+          categories: [env("c-a", "Alpha"), env("c-b", "Bravo"), env("c-c", "Charlie")],
+        }}
+        onSave={jest.fn()}
+      />
+    );
+    await settle();
+    // Confirms the premise: this really did render unauthenticated first.
+    expect(screen.getByPlaceholderText("Enter your password")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Enter your password"), { target: { value: "whatever" } });
+    fireEvent.click(screen.getByText(/Sign in as/));
+    await waitFor(() => expect(screen.getByTestId("sidebar")).toBeInTheDocument());
+
+    // Landed on the Dashboard, not Envelopes — no envelope card to drag, so
+    // this drags the surface itself. The mechanism under test does not care
+    // which element inside the surface the touch starts on.
+    const surface = swipeSurface();
+    fireEvent.touchStart(surface, { touches: [{ clientX: 300, clientY: 400 }] });
+    const ev = moveEvent(280, 402); // clearly horizontal, past AXIS_LOCK_PX
+    fireEvent(surface, ev);
+    // If this were still a plain ref plus a mount-time effect, the listener
+    // would never have been attached and this would be false.
+    expect(ev.defaultPrevented).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DEF-015 — the swipe used to die inside an envelope drill-down.
 //
 // TransactionsView substituted its own gesture there: swipe-left cleared the
