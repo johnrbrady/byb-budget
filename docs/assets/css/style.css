@@ -8,7 +8,6 @@
   --byb-primary-deep: #5F8A4F;
   --byb-secondary: #B8D4AE;
   --byb-primary-tint: #EDF3E8;
-  --byb-primary-ring: rgba(127, 176, 105, 0.25);
 
   --byb-surface: #FFFFFF;
   --byb-surface-alt: #FAFBF9;
@@ -147,8 +146,10 @@ a:focus-visible, button:focus-visible {
 .btn:active { transform: scale(0.98); }
 
 .btn-primary {
+  /* White-on-primary matches the app's own button style (buildStyles.js: background:
+     T.primary, color: "#FFF") rather than inventing a new button colour. */
   background: var(--byb-primary);
-  color: #123014;
+  color: #FFFFFF;
   border-color: var(--byb-primary);
 }
 
@@ -230,12 +231,6 @@ section h2 {
   font-size: 14px;
   color: var(--byb-text-muted);
   line-height: 1.55;
-}
-
-.features-note {
-  margin: 24px 0 0;
-  font-size: 14px;
-  color: var(--byb-text-muted);
 }
 
 /* ── Screenshot gallery ────────────────────────────────────────────────── */
