@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BYB! Budget — Ban' Yuh Belly Budgeting</title>
+<meta name="description" content="Private household envelope budgeting with integer-cent accounting.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#7FB069" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121412" media="(prefers-color-scheme: dark)">
+
+<link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+<link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="assets/img/favicon-48.png" sizes="48x48" type="image/png">
+<link rel="icon" href="assets/img/icon-512.png" sizes="512x512" type="image/png">
+<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="BYB! Budget — Ban' Yuh Belly Budgeting">
+<meta property="og:description" content="Private household envelope budgeting with integer-cent accounting.">
+<meta property="og:image" content="assets/img/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img class="hero-logo" src="assets/img/logo.svg" width="244" height="274" alt="BYB! Budget logo">
+    <h1>BYB! — Ban' Yuh Belly Budgeting</h1>
+    <p class="tagline">Private household envelope budgeting with integer-cent accounting.</p>
+    <div class="hero-links">
+      <a class="btn btn-primary" href="https://github.com/johnrbrady/byb-budget" target="_blank" rel="noopener">View on GitHub</a>
+      <a class="btn btn-ghost" href="https://github.com/truenas/apps/tree/master/ix-dev/community/byb-budget" target="_blank" rel="noopener">TrueNAS App Catalog</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="story">
+    <div class="wrap">
+      <h2>Ban' Yuh Belly — the story behind the app</h2>
+      <blockquote>
+        <p><em>"Ban' yuh belly"</em> is a Caribbean saying — if you grew up in Trinidad, Tobago, Guyana, or Grenada, you know exactly what it means: brace yourself, tighten up, prepare for hard times ahead. The kind of thing a grandmother would say when money was scarce and sacrifice was necessary. This app was built so a household never has to hear those words unprepared again — when you know where every dollar is going, hard times stop catching you off guard. It's a passion project, built for the author's own family first.</p>
+      </blockquote>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <ul class="features-list">
+        <li>
+          <strong>Envelope budgeting</strong>
+          <span>Every expense category is an envelope with a monthly fill amount and its own running balance.</span>
+        </li>
+        <li>
+          <strong>Integer-cent accounting</strong>
+          <span>Money is stored and calculated in integer cents, so balances don't drift from floating-point rounding.</span>
+        </li>
+        <li>
+          <strong>Multiple household users</strong>
+          <span>Everyone in the household signs in with their own password.</span>
+        </li>
+        <li>
+          <strong>Recurring bills &amp; income</strong>
+          <span>Weekly, fortnightly, or monthly rules that post with one click and advance their own due date.</span>
+        </li>
+        <li>
+          <strong>Bank-statement CSV import</strong>
+          <span>Bring in transactions from a bank export instead of typing each one in by hand.</span>
+        </li>
+        <li>
+          <strong>Reports</strong>
+          <span>Spending distribution, month-over-month category trends, and budget history.</span>
+        </li>
+        <li>
+          <strong>Savings targets</strong>
+          <span>Accumulating envelopes can carry a target amount and due date toward a goal.</span>
+        </li>
+        <li>
+          <strong>Automated backups</strong>
+          <span>Scheduled, verified backups of the household's data.</span>
+        </li>
+        <li>
+          <strong>Save-conflict protection</strong>
+          <span>If two people edit at the same time, changes aren't silently overwritten.</span>
+        </li>
+        <li>
+          <strong>Self-hosted</strong>
+          <span>Runs on your own hardware via Docker or TrueNAS SCALE — JSON files on disk, no subscription, no bank-account linking.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <div class="wrap">
+      <h2>Screenshots</h2>
+      <div class="gallery">
+
+        <figure>
+          <a href="assets/screenshots/dashboard.jpg" target="_blank" rel="noopener">
+            <img src="assets/screenshots/dashboard.jpg" width="600" height="1299" loading="lazy" decoding="async"
+                 alt="Dashboard screen: unallocated balance, total held in envelopes, and a scrollable envelope list with progress bars.">
+          </a>
+          <figcaption>Dashboard</figcaption>
+        </figure>
+
+        <figure>
+          <a href="assets/screenshots/transactions.jpg" target="_blank" rel="noopener">
+            <img src="assets/screenshots/transactions.jpg" width="600" height="1299" loading="lazy" decoding="async"
+                 alt="Transactions screen: a dated list of entries for the month with category tags and running totals.">
+          </a>
+          <figcaption>Transactions</figcaption>
+        </figure>
+
+        <figure>
+          <a href="assets/screenshots/envelopes.jpg" target="_blank" rel="noopener">
+            <img src="assets/screenshots/envelopes.jpg" width="600" height="1299" loading="lazy" decoding="async"
+                 alt="Envelopes screen: each envelope's balance against its monthly target, with on-track and saving status badges.">
+          </a>
+          <figcaption>Envelopes</figcaption>
+        </figure>
+
+        <figure>
+          <a href="assets/screenshots/recurring.jpg" target="_blank" rel="noopener">
+            <img src="assets/screenshots/recurring.jpg" width="600" height="1299" loading="lazy" decoding="async"
+                 alt="Recurring screen, empty state, prompting the user to add their first recurring bill or income rule.">
+          </a>
+          <figcaption>Recurring</figcaption>
+        </figure>
+
+        <figure>
+          <a href="assets/screenshots/reports-distribution.jpg" target="_blank" rel="noopener">
+            <img src="assets/screenshots/reports-distribution.jpg" width="600" height="1299" loading="lazy" decoding="async"
+                 alt="Reports screen: a spending distribution pie chart breaking down one month's spending by category.">
+          </a>
+          <figcaption>Reports — spending distribution</figcaption>
+        </figure>
+
+        <figure>
+          <a href="assets/screenshots/reports-trend.jpg" target="_blank" rel="noopener">
+            <img src="assets/screenshots/reports-trend.jpg" width="600" height="1299" loading="lazy" decoding="async"
+                 alt="Reports screen: a month-over-month bar chart tracking one category's spending trend, plus budget history.">
+          </a>
+          <figcaption>Reports — category trend</figcaption>
+        </figure>
+
+        <figure>
+          <a href="assets/screenshots/settings.jpg" target="_blank" rel="noopener">
+            <img src="assets/screenshots/settings.jpg" width="600" height="1299" loading="lazy" decoding="async"
+                 alt="Settings screen: profile name, password change, light/dark appearance toggle, and household user management.">
+          </a>
+          <figcaption>Settings</figcaption>
+        </figure>
+
+      </div>
+      <p class="gallery-note">Screenshots are from a seeded demo account — the numbers aren't a real household's finances.</p>
+    </div>
+  </section>
+
+  <section class="links">
+    <div class="wrap">
+      <h2>Get it</h2>
+      <ul class="link-cards">
+        <li>
+          <a href="https://github.com/johnrbrady/byb-budget" target="_blank" rel="noopener">Source code</a>
+          <p>Clone it, self-host it, read it. Docker Compose and TrueNAS SCALE deployment are both documented in the repo.</p>
+        </li>
+        <li>
+          <a href="https://github.com/truenas/apps/tree/master/ix-dev/community/byb-budget" target="_blank" rel="noopener">TrueNAS App Catalog listing</a>
+          <p>BYB! Budget in TrueNAS SCALE's community app catalog, for a one-click install on a NAS.</p>
+        </li>
+        <li>
+          <a href="https://github.com/johnrbrady/byb-budget/issues" target="_blank" rel="noopener">Questions or bugs</a>
+          <p>Open an issue on GitHub.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Self-hosted. No subscription. No bank-account linking. Your data stays on your own hardware.</p>
+    <p>A household project by <a href="https://github.com/johnrbrady" target="_blank" rel="noopener">John Brady</a>.</p>
+  </div>
+</footer>
+
+</body>
+</html>
