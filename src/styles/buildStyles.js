@@ -80,7 +80,7 @@ export function buildStyles(theme, isMobile = false) {
     brand: isMobile
       ? { display: "none" }
       : { padding: "0 var(--byb-space-5) var(--byb-space-6)", fontWeight: 700, fontSize: T.textBase, letterSpacing: -0.2, display: "flex", alignItems: "center", gap: "var(--byb-space-2)", lineHeight: 1.15 },
-    brandLogo: { width: 40, height: 40, borderRadius: T.pill, background: T.secondary, padding: 4, objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 1px 2px rgba(24,32,22,0.12))" },
+    brandLogo: { width: 40, height: 40, borderRadius: T.pill, background: "#FFF", objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 1px 2px rgba(24,32,22,0.12))" },
     brandText: { display: "flex", flexDirection: "column", gap: 2 },
     brandTitle: { color: T.primary, fontWeight: 800, fontSize: T.textLg, letterSpacing: 0.3, textTransform: "uppercase" },
     brandSubtitle: { color: T.textMuted, fontWeight: 500, fontSize: T.text2xs, letterSpacing: 0.5, textTransform: "uppercase" },

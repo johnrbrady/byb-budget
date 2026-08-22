@@ -55,7 +55,7 @@ export function LoginPage({ onLogin }) {
       <div className="byb-view" style={{ width: "100%", maxWidth: 420 }}>
         {/* Brand header */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <img src="/logo.svg" alt="BYB!" style={{ width: 96, height: 96, borderRadius: "50%", background: PALETTE.secondary, padding: 8, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 3px 12px rgba(0,0,0,0.13))" }} onError={(e) => { e.target.style.display = "none"; }} />
+          <img src="/logo.png" alt="BYB!" style={{ width: 96, height: 96, borderRadius: "50%", background: "#FFF", objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 3px 12px rgba(0,0,0,0.13))" }} onError={(e) => { e.target.style.display = "none"; }} />
           <div style={{ fontSize: 28, fontWeight: 800, color: PALETTE.primary, letterSpacing: -0.5, lineHeight: 1.1 }}>BYB!</div>
           <div style={{ color: "#6B6F6B", fontSize: 14, marginTop: 5 }}>Ban' Yuh Belly Budgeting</div>
         </div>
@@ -87,7 +87,7 @@ export function LoginPage({ onLogin }) {
               autoFocus
               style={{ width: "100%", padding: "13px 14px", borderRadius: 8, border: `1px solid ${PALETTE.border}`, fontSize: 16, boxSizing: "border-box", outline: "none", color: PALETTE.textLight, background: PALETTE.surfaceLight }}
             />
-            <div style={{ fontSize: 11, color: "#6B6F6B", marginTop: 7 }}>First time signing in? Any password you enter will become your password.</div>
+            <div style={{ fontSize: 11, color: "#6B6F6B", marginTop: 7 }}>Use the temporary password your admin gave you. On a brand-new household, the sole owner creates the first password here (minimum 8 characters).</div>
           </div>
 
           {/* Error */}

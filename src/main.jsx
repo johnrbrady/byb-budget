@@ -31,6 +31,7 @@ function SkeletonScreen() {
 export function Root() {
   const [initialData, setInitialData] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailure, setLoadFailure] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [saveConflict, setSaveConflict] = useState(false);
   const [saveFailure, setSaveFailure] = useState(null);
@@ -51,6 +52,7 @@ export function Root() {
 
   const loadData = useCallback(async (preserveOnFailure = false) => {
     const token = getToken();
+    if (!preserveOnFailure) setLoadFailure(false);
     try {
       const res = await fetch("/api/data", {
         headers: {
@@ -65,18 +67,22 @@ export function Root() {
         localStorage.removeItem("byb_token");
         localStorage.removeItem("byb_user");
         setInitialData(null);
+        setLoadFailure(false);
       } else if (res.ok) {
         const data = await res.json();
         versionRef.current = typeof data.dataVersion === "number" ? data.dataVersion : 0;
         setInitialData(data);
+        setLoadFailure(false);
       } else {
         if (preserveOnFailure) return false;
         setInitialData(null);
+        setLoadFailure(true);
       }
     } catch {
-      console.warn("Could not reach API — starting with defaults.");
+      console.warn("Could not reach API — budget editing remains locked until a real document loads.");
       if (preserveOnFailure) return false;
       setInitialData(null);
+      setLoadFailure(true);
     }
     setLoaded(true);
     setReloadKey((k) => k + 1);
@@ -224,6 +230,21 @@ export function Root() {
   }, [flushSave]);
 
   if (!loaded) return <SkeletonScreen />;
+
+  // Never turn an unavailable or failed API response into an editable default
+  // household. A version-zero default draft could otherwise overwrite a real
+  // version-zero budget when connectivity returns.
+  if (loadFailure) {
+    return (
+      <main role="alert" style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, boxSizing: "border-box", background: "#F6F5F0", color: "#1F2937" }}>
+        <div style={{ width: "100%", maxWidth: 440, padding: 28, borderRadius: 14, background: "#FFF", border: "1px solid #D8D5CB", boxShadow: "0 8px 28px rgba(0,0,0,0.08)", textAlign: "center" }}>
+          <strong style={{ display: "block", fontSize: 18, marginBottom: 8 }}>Could not load budget</strong>
+          <span style={{ display: "block", fontSize: 14, lineHeight: 1.6, color: "#6B6F6B", marginBottom: 18 }}>Editing is locked so an empty fallback cannot replace your household data.</span>
+          <button type="button" onClick={() => { setLoaded(false); loadData(); }} style={{ padding: "11px 18px", border: 0, borderRadius: 8, background: "#5F8A4F", color: "#FFF", fontWeight: 700, cursor: "pointer" }}>Retry loading</button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <>

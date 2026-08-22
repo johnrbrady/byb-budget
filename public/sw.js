@@ -1,8 +1,8 @@
 /* BYB! service worker — cache static assets for instant loads.
    API requests are never cached: budget data must always be fresh. */
 
-const CACHE_NAME = "byb-static-v1";
-const PRECACHE = ["/", "/manifest.json", "/logo.svg", "/logo.png"];
+const CACHE_NAME = "byb-static-v2";
+const PRECACHE = ["/", "/manifest.json", "/logo.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

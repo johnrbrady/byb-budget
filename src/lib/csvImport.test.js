@@ -64,3 +64,11 @@ test("rejects statements without required columns", () => {
   expect(() => parseBankCsv("Date,What\n2026-01-01,B")).toThrow("Description or Details");
   expect(() => parseBankCsv("Date,Description\n2026-01-01,B")).toThrow("Amount");
 });
+
+test("rejects oversized or excessive-row statements before building an import preview", () => {
+  expect(() => parseBankCsv("x".repeat(5 * 1024 * 1024 + 1))).toThrow("5 MB");
+
+  const rows = ["Date,Description,Amount"];
+  for (let index = 0; index < 50_001; index++) rows.push(`2026-08-01,Row ${index},-1.00`);
+  expect(() => parseBankCsv(rows.join("\n"))).toThrow("50,000 transaction rows");
+});

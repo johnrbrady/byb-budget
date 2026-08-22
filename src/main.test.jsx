@@ -73,6 +73,21 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+test("an initial load failure cannot expose editable defaults that may overwrite the household", async () => {
+  fetch
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce(response(200, serverData("server recovered", 0)));
+
+  render(<Root />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Could not load budget");
+  expect(screen.queryByRole("button", { name: "Save first edit" })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+  expect(await screen.findByTestId("draft-description")).toHaveTextContent("server recovered");
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
 test("a 409 keeps the newest in-flight local edit visible until explicit discard", async () => {
   let finishFirstPost;
   fetch

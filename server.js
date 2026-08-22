@@ -16,9 +16,22 @@ const DATA_DIR = process.env.BYB_DATA_DIR || path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "budget.json");
 const PASSWORDS_FILE = path.join(DATA_DIR, "passwords.json");
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
-const PORT = parseInt(process.env.BYB_PORT || "3001", 10);
-const SESSION_TTL_MS = parseInt(process.env.BYB_SESSION_TTL_HOURS || "72", 10) * 3600_000; // default 72h
-const BCRYPT_ROUNDS = parseInt(process.env.BYB_BCRYPT_ROUNDS || "12", 10);
+const MIN_PASSWORD_LENGTH = 8;
+
+function boundedInteger(name, fallback, min, max) {
+  const raw = process.env[name] ?? String(fallback);
+  if (!/^\d+$/.test(raw)) throw new Error(`${name} must be an integer from ${min} to ${max}`);
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer from ${min} to ${max}`);
+  }
+  return value;
+}
+
+const PORT = boundedInteger("BYB_PORT", 3001, 1, 65_535);
+const SESSION_TTL_HOURS = boundedInteger("BYB_SESSION_TTL_HOURS", 72, 1, 8_760);
+const SESSION_TTL_MS = SESSION_TTL_HOURS * 3600_000;
+const BCRYPT_ROUNDS = boundedInteger("BYB_BCRYPT_ROUNDS", 12, process.env.NODE_ENV === "test" ? 4 : 10, 15);
 // Integrations (both optional — features are disabled when unset)
 const API_KEY = process.env.BYB_API_KEY || "";          // read-only summary endpoint for n8n etc.
 const WEBHOOK_URL = process.env.BYB_WEBHOOK_URL || ""; // outbound POST on reconcile events
@@ -75,6 +88,15 @@ app.use(
 // ── Body parser with size limit ─────────────────────────────────────────────
 app.use(express.json({ limit: "2mb" }));
 
+// Financial and authentication responses must never be stored by a browser or
+// intermediary cache. Static application assets are served outside /api/ and
+// retain their normal cache behaviour.
+app.use("/api/", (_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  res.set("Pragma", "no-cache");
+  next();
+});
+
 // ── Rate limiting ───────────────────────────────────────────────────────────
 const loginLimiter = rateLimit({
   windowMs: 15 * 60_000, // 15 minutes
@@ -94,12 +116,47 @@ const apiLimiter = rateLimit({
 
 app.use("/api/", apiLimiter);
 
+// ── Strict, atomic JSON storage ──────────────────────────────────────────────
+function readJSON(file) {
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
+  } catch {
+    throw new Error(`Could not read ${path.basename(file)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${path.basename(file)} must contain a JSON object`);
+  }
+  return parsed;
+}
+
+function writeJSON(file, data) {
+  const temporary = `${file}.${process.pid}-${randomBytes(6).toString("hex")}.tmp`;
+  const bytes = Buffer.from(JSON.stringify(data, null, 2));
+  let fd;
+  try {
+    fd = fs.openSync(temporary, "wx", 0o600);
+    fs.writeFileSync(fd, bytes);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = undefined;
+    fs.renameSync(temporary, file);
+    try { fs.chmodSync(file, 0o600); } catch {}
+  } catch (error) {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch {}
+    }
+    try { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); } catch {}
+    throw error;
+  }
+}
+
 // ── Ensure data directory and files exist ───────────────────────────────────
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(
+  writeJSON(
     DATA_FILE,
-    JSON.stringify({
+    {
       transactions: [],
       categories: [],
       recurring: [],
@@ -111,11 +168,11 @@ if (!fs.existsSync(DATA_FILE)) {
       unallocatedBalance: 0,
       moneyScale: MONEY_SCALE,
       dataVersion: 0,
-    }, null, 2)
+    }
   );
 }
-if (!fs.existsSync(PASSWORDS_FILE)) fs.writeFileSync(PASSWORDS_FILE, JSON.stringify({}, null, 2));
-if (!fs.existsSync(SESSIONS_FILE)) fs.writeFileSync(SESSIONS_FILE, JSON.stringify({}, null, 2));
+if (!fs.existsSync(PASSWORDS_FILE)) writeJSON(PASSWORDS_FILE, {});
+if (!fs.existsSync(SESSIONS_FILE)) writeJSON(SESSIONS_FILE, {});
 
 // Money is migrated before the first request can be served. The migration is
 // explicit-path, idempotent, atomic, and leaves a sibling pre-cents recovery
@@ -124,25 +181,18 @@ if (!fs.existsSync(SESSIONS_FILE)) fs.writeFileSync(SESSIONS_FILE, JSON.stringif
 const moneyMigration = migrateMoneyFile(DATA_FILE);
 console.log("Money schema:", JSON.stringify(publicInspection(moneyMigration)));
 
-// ── File helpers ────────────────────────────────────────────────────────────
-function readJSON(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf-8"));
-  } catch {
-    return {};
-  }
-}
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
 // ── Session helpers (with expiry) ───────────────────────────────────────────
 function cleanExpiredSessions() {
   const sessions = readJSON(SESSIONS_FILE);
   const now = Date.now();
   let changed = false;
   for (const token of Object.keys(sessions)) {
-    if (sessions[token].expiresAt && sessions[token].expiresAt < now) {
+    const session = sessions[token];
+    const valid = session && typeof session === "object" && !Array.isArray(session) &&
+      typeof session.userId === "string" && session.userId.length > 0 &&
+      Number.isSafeInteger(session.createdAt) && Number.isSafeInteger(session.expiresAt) &&
+      session.expiresAt > now;
+    if (!valid) {
       delete sessions[token];
       changed = true;
     }
@@ -159,6 +209,20 @@ function createSession(userId) {
   return token;
 }
 
+function revokeUserSessions(userId, exceptToken = null) {
+  const sessions = readJSON(SESSIONS_FILE);
+  let changed = false;
+  for (const [token, session] of Object.entries(sessions)) {
+    if (token !== exceptToken && session && typeof session === "object" && session.userId === userId) {
+      delete sessions[token];
+      changed = true;
+    }
+  }
+  if (changed) writeJSON(SESSIONS_FILE, sessions);
+}
+
+const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+
 // ── Auth middleware ─────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization || "";
@@ -169,8 +233,15 @@ function requireAuth(req, res, next) {
   const session = sessions[token];
   if (!session) return res.status(401).json({ error: "Invalid or expired session" });
 
-  // Support both old format (string) and new format (object)
-  req.userId = typeof session === "string" ? session : session.userId;
+  const data = readJSON(DATA_FILE);
+  if (!(data.users || []).some((user) => user.id === session.userId)) {
+    delete sessions[token];
+    writeJSON(SESSIONS_FILE, sessions);
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+
+  req.userId = session.userId;
+  req.sessionToken = token;
   next();
 }
 
@@ -236,6 +307,19 @@ function validateBudgetData(data) {
     return "dataVersion must be a number";
   }
   if (data.moneyScale !== MONEY_SCALE) return `moneyScale must be ${MONEY_SCALE}`;
+  for (const transaction of data.transactions || []) {
+    if (!transaction || typeof transaction !== "object" || Array.isArray(transaction)) return "transactions must contain objects";
+    if (transaction.type !== "income" && transaction.type !== "expense") return "transaction type must be income or expense";
+    if (!Number.isSafeInteger(transaction.amount) || transaction.amount <= 0) return "transaction amount must be a positive safe integer";
+  }
+  for (const rule of data.recurring || []) {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) return "recurring must contain objects";
+    if (!Number.isSafeInteger(rule.amount) || rule.amount <= 0) return "recurring amount must be a positive safe integer";
+  }
+  for (const transfer of data.transfers || []) {
+    if (!transfer || typeof transfer !== "object" || Array.isArray(transfer)) return "transfers must contain objects";
+    if (!Number.isSafeInteger(transfer.amount) || transfer.amount <= 0) return "transfer amount must be a positive safe integer";
+  }
   // Size guard — prevent unreasonably large payloads
   const txCount = (data.transactions || []).length;
   const catCount = (data.categories || []).length;
@@ -246,15 +330,21 @@ function validateBudgetData(data) {
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 
-// GET /api/users — returns user list for login page (names + roles only)
+// GET /api/health — deliberately contains no household data. Container health
+// checks should use this rather than an endpoint that lists login identities.
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true });
+});
+
+// GET /api/users — returns only the identities needed by the login picker.
 app.get("/api/users", (req, res) => {
   const data = readJSON(DATA_FILE);
-  const users = (data.users || []).map((u) => ({ id: u.id, name: u.name, colour: u.colour, role: u.role }));
+  const users = (data.users || []).map((u) => ({ id: u.id, name: u.name, colour: u.colour }));
   res.json({ users });
 });
 
 // POST /api/auth/login
-app.post("/api/auth/login", loginLimiter, async (req, res) => {
+app.post("/api/auth/login", loginLimiter, asyncRoute(async (req, res) => {
   const { userId, password } = req.body || {};
   if (!isValidString(userId, 100) || !isValidString(password, 200)) {
     return res.status(400).json({ error: "userId and password required" });
@@ -262,21 +352,26 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
   // Verify user exists in budget data
   const data = readJSON(DATA_FILE);
-  const userExists = (data.users || []).some((u) => u.id === userId);
-  if (!userExists) return res.status(401).json({ error: "Invalid credentials" });
+  const users = data.users || [];
+  const user = users.find((candidate) => candidate.id === userId);
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
   const passwords = readJSON(PASSWORDS_FILE);
 
   if (!passwords[userId]) {
-    // First sign-in — set this as their password
+    // Only the untouched, single-owner installation may bootstrap itself. A
+    // missing hash on any established account fails closed and must be repaired
+    // through the authenticated admin reset route.
+    const pristineBootstrap = users.length === 1 && user.role === "owner" && Object.keys(passwords).length === 0;
+    if (!pristineBootstrap) {
+      return res.status(401).json({ error: "Account setup required — ask an admin for a temporary password" });
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `Password must be ${MIN_PASSWORD_LENGTH}–200 characters` });
+    }
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     passwords[userId] = hash;
     writeJSON(PASSWORDS_FILE, passwords);
-    // If this is the very first password ever set, promote this user to owner
-    if (Object.keys(passwords).length === 1) {
-      data.users = (data.users || []).map((u) => (u.id === userId ? { ...u, role: "owner" } : u));
-      writeJSON(DATA_FILE, data);
-    }
   } else {
     const ok = await bcrypt.compare(password, passwords[userId]);
     if (!ok) return res.status(401).json({ error: "Invalid credentials" });
@@ -284,7 +379,7 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
   const token = createSession(userId);
   res.json({ token, userId });
-});
+}));
 
 // POST /api/auth/logout
 app.post("/api/auth/logout", requireAuth, (req, res) => {
@@ -315,8 +410,9 @@ app.post("/api/auth/welcome-seen", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/admin/add-user — admin adds a new user
-app.post("/api/admin/add-user", requireAdmin, (req, res) => {
+// POST /api/admin/add-user — admin adds a new user and receives the generated
+// temporary credential exactly once in this response.
+app.post("/api/admin/add-user", requireAdmin, asyncRoute(async (req, res) => {
   const { name, role, colour } = req.body || {};
   if (!isValidString(name, 50)) return res.status(400).json({ error: "Name required (max 50 chars)" });
   const data = readJSON(DATA_FILE);
@@ -331,10 +427,46 @@ app.post("/api/admin/add-user", requireAdmin, (req, res) => {
   const id = `u-${slug}-${randomBytes(3).toString("hex")}`;
   const validColour = typeof colour === "string" && /^#[0-9a-fA-F]{6}$/.test(colour) ? colour : "#7FB069";
   const newUser = { id, name: trimmed, role: role === "admin" ? "admin" : "member", colour: validColour };
-  data.users = [...(data.users || []), newUser];
-  writeJSON(DATA_FILE, data);
-  res.json({ ok: true, user: newUser });
-});
+  const temporaryPassword = randomBytes(16).toString("hex");
+  const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
+
+  // Re-read after the asynchronous hash to avoid overwriting an intervening
+  // user-management change. Writing the credential first is fail-closed: if
+  // the budget write fails, no login-picker identity is exposed without a hash.
+  const latestData = readJSON(DATA_FILE);
+  if ((latestData.users || []).some((u) => u.name.toLowerCase() === trimmed.toLowerCase())) {
+    return res.status(400).json({ error: "A user with that name already exists" });
+  }
+  const passwords = readJSON(PASSWORDS_FILE);
+  passwords[id] = passwordHash;
+  writeJSON(PASSWORDS_FILE, passwords);
+  latestData.users = [...(latestData.users || []), newUser];
+  writeJSON(DATA_FILE, latestData);
+  res.json({ ok: true, user: newUser, temporaryPassword });
+}));
+
+// POST /api/admin/reset-password — owner/admin recovery for an established
+// non-owner account. Resetting also invalidates every active target session.
+app.post("/api/admin/reset-password", requireAdmin, asyncRoute(async (req, res) => {
+  const { targetUserId } = req.body || {};
+  if (!isValidString(targetUserId, 100)) {
+    return res.status(400).json({ error: "targetUserId required" });
+  }
+  const data = readJSON(DATA_FILE);
+  const target = (data.users || []).find((user) => user.id === targetUserId);
+  if (!target) return res.status(404).json({ error: "User not found" });
+  if (target.role === "owner") return res.status(403).json({ error: "The owner must change their own password" });
+
+  const temporaryPassword = randomBytes(16).toString("hex");
+  const passwords = readJSON(PASSWORDS_FILE);
+  passwords[targetUserId] = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
+  // Revoke first: if the password write then fails, the reset reports failure
+  // and at worst signs the target out; it never changes a credential while
+  // leaving old sessions active.
+  revokeUserSessions(targetUserId);
+  writeJSON(PASSWORDS_FILE, passwords);
+  res.json({ ok: true, temporaryPassword });
+}));
 
 // POST /api/admin/set-role — admin changes another user's role
 app.post("/api/admin/set-role", requireAdmin, (req, res) => {
@@ -357,20 +489,20 @@ app.post("/api/admin/set-role", requireAdmin, (req, res) => {
 });
 
 // POST /api/auth/set-password (change password while authenticated)
-app.post("/api/auth/set-password", requireAuth, async (req, res) => {
+app.post("/api/auth/set-password", requireAuth, asyncRoute(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (!isValidString(newPassword, 200) || newPassword.length < 4) {
-    return res.status(400).json({ error: "New password must be 4–200 characters" });
+  if (!isValidString(newPassword, 200) || newPassword.length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `New password must be ${MIN_PASSWORD_LENGTH}–200 characters` });
   }
   const passwords = readJSON(PASSWORDS_FILE);
-  if (passwords[req.userId]) {
-    const ok = await bcrypt.compare(currentPassword || "", passwords[req.userId]);
-    if (!ok) return res.status(401).json({ error: "Current password is incorrect" });
-  }
+  if (!passwords[req.userId]) return res.status(409).json({ error: "Account setup required — ask an admin" });
+  const ok = await bcrypt.compare(currentPassword || "", passwords[req.userId]);
+  if (!ok) return res.status(401).json({ error: "Current password is incorrect" });
   passwords[req.userId] = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  revokeUserSessions(req.userId, req.sessionToken);
   writeJSON(PASSWORDS_FILE, passwords);
   res.json({ ok: true });
-});
+}));
 
 // GET /api/data
 app.get("/api/data", requireAuth, (req, res) => {
@@ -420,8 +552,10 @@ app.post("/api/data", requireAuth, (req, res) => {
         dataVersion: currentVersion,
       });
     }
-    const next = { ...submitted, moneyScale: MONEY_SCALE, dataVersion: currentVersion + 1 };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(next, null, 2));
+    // Identity and authorization data is server-owned. A normal household data
+    // save may edit the shared ledger but can never add users or alter roles.
+    const next = { ...submitted, users: current.users || [], moneyScale: MONEY_SCALE, dataVersion: currentVersion + 1 };
+    writeJSON(DATA_FILE, next);
     res.json({ ok: true, dataVersion: next.dataVersion });
   } catch {
     res.status(500).json({ error: "Could not write data" });
@@ -515,6 +649,12 @@ const spaLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Unknown API paths must stay JSON failures rather than falling through to a
+// production SPA document, which can make a broken health check look healthy.
+app.use("/api/", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
   // SPA fallback — must come after all API routes
@@ -523,11 +663,19 @@ if (fs.existsSync(DIST_DIR)) {
   });
 }
 
+// Async storage/hash failures are deliberately generic at the trust boundary;
+// logs retain only the non-secret error message needed for local diagnosis.
+app.use((error, _req, res, next) => {
+  console.error("Request failed:", error?.message || "Unknown error");
+  if (res.headersSent) return next(error);
+  res.status(500).json({ error: "Internal server error" });
+});
+
 // ── Start ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`BYB! server running at http://localhost:${PORT}`);
   console.log(`  Integrations API: ${API_KEY ? "enabled (/api/integrations/summary)" : "disabled — set BYB_API_KEY to enable"}`);
-  console.log(`  Reconcile webhook: ${WEBHOOK_URL ? WEBHOOK_URL : "disabled — set BYB_WEBHOOK_URL to enable"}`);
+  console.log(`  Reconcile webhook: ${WEBHOOK_URL ? "enabled" : "disabled — set BYB_WEBHOOK_URL to enable"}`);
   if (fs.existsSync(DIST_DIR)) {
     console.log(`  App available at http://localhost:${PORT}`);
   } else {

@@ -52,6 +52,8 @@ test("TrueNAS community package is complete and pinned to the release image", ()
   expect(template).toContain("c1.set_user");
   expect(template).toContain('c1.add_storage(values.consts.data_path, values.storage.data)');
   expect(template).toContain('c1.healthcheck.set_test("wget"');
+  expect(template).toContain('"path": "/api/health"');
+  expect(template).not.toContain('"path": "/api/users"');
   expect(template).toContain("tpl.portals.add");
 });
 

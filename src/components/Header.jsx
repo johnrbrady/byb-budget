@@ -10,7 +10,7 @@ export function Header({ view, activeMonth, setActiveMonth, availableMonths, use
     <div style={styles.header}>
       <div style={styles.viewTitle}>
         {mobile && (
-          <img src="/logo.svg" alt="BYB!" style={{ width: 28, height: 28, borderRadius: "50%", background: PALETTE.secondary, padding: 3, objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
+          <img src="/logo.png" alt="BYB!" style={{ width: 28, height: 28, borderRadius: "50%", background: "#FFF", objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
         )}
         <span>{VIEW_TITLES[view]}</span>
       </div>

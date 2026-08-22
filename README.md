@@ -98,7 +98,9 @@ All data lives in `data/` next to `server.js` (or `BYB_DATA_DIR`):
   concurrent edits. Money is stored as integer cents and marked with
   `moneyScale: 100`; display, XLSX, webhooks and integration responses remain
   ordinary AUD dollars.
-- `passwords.json` — bcrypt hashes. First sign-in sets the password.
+- `passwords.json` — bcrypt hashes. Only a brand-new installation with one
+  owner and no hashes can set its first password at sign-in. Admin-created
+  accounts receive a generated temporary password.
 - `sessions.json` — bearer tokens with expiry (default 72 h).
 
 Back up the `data/` directory and you have everything. On TrueNAS that is done
@@ -133,9 +135,13 @@ stale write take the normal conflict path.
 
 ## Authentication
 
-Pick a user on the login page and enter a password. The first password ever
-set promotes that user to owner. Admins can add users and change roles from
-Settings (avatar button, top right).
+Pick a user on the login page and enter a password. On a brand-new installation,
+the sole preconfigured owner creates the first password (minimum 8 characters).
+After that, missing credentials fail closed: admins add users or reset existing
+non-owner accounts from Settings and pass along the generated temporary
+password. Users can then change their own password; doing so signs out their
+other active sessions. Admins can also change non-owner roles from Settings
+(avatar button, top right).
 
 ## Integrations (n8n)
 

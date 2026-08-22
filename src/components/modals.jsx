@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
 import { IconMoon, IconSun, IconClose } from "./Icons.jsx";
+import { askConfirm } from "./ConfirmDialog.jsx";
 
 export function WelcomeModal({ onClose, styles }) {
   const mobile = styles.isMobile;
@@ -11,7 +12,7 @@ export function WelcomeModal({ onClose, styles }) {
 
         {/* Logo / brand */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <img src="/logo.svg" alt="BYB!" style={{ width: 84, height: 84, borderRadius: "50%", background: PALETTE.secondary, padding: 7, objectFit: "contain", filter: "drop-shadow(0 3px 12px rgba(0,0,0,0.13))" }} onError={(e) => { e.target.style.display = "none"; }} />
+          <img src="/logo.png" alt="BYB!" style={{ width: 84, height: 84, borderRadius: "50%", background: "#FFF", objectFit: "contain", filter: "drop-shadow(0 3px 12px rgba(0,0,0,0.13))" }} onError={(e) => { e.target.style.display = "none"; }} />
           <div style={{ marginTop: 14, fontSize: 28, fontWeight: 800, color: PALETTE.primary, letterSpacing: -0.5 }}>BYB!</div>
           <div style={{ color: styles.textMuted, fontSize: 14, marginTop: 4 }}>Ban' Yuh Belly Budgeting</div>
         </div>
@@ -69,6 +70,7 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
   const [newUserColour, setNewUserColour] = useState("#7FB069");
   const [addUserLoading, setAddUserLoading] = useState(false);
   const [addUserMsg, setAddUserMsg] = useState("");
+  const [temporaryCredential, setTemporaryCredential] = useState(null);
 
   const mobile = styles.isMobile;
   const dark = styles.dark;
@@ -95,7 +97,7 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
   };
 
   const savePwd = async () => {
-    if (!newPwd || newPwd.length < 4) { setPwdMsg("New password must be at least 4 characters"); return; }
+    if (!newPwd || newPwd.length < 8) { setPwdMsg("New password must be at least 8 characters"); return; }
     setPwdLoading(true);
     setPwdMsg("");
     try {
@@ -115,6 +117,7 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
     if (!newUserName.trim()) return;
     setAddUserLoading(true);
     setAddUserMsg("");
+    setTemporaryCredential(null);
     try {
       const res = await fetch("/api/admin/add-user", {
         method: "POST",
@@ -125,12 +128,39 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
       if (res.ok) {
         setUsers((prev) => [...prev, data.user]);
         setNewUserName("");
-        setAddUserMsg(`${data.user.name} added! They can sign in on the login page.`);
+        setAddUserMsg(`${data.user.name} added! Give them the temporary password shown below.`);
+        setTemporaryCredential({ name: data.user.name, password: data.temporaryPassword });
       } else {
         setAddUserMsg(data.error || "Failed");
       }
     } catch { setAddUserMsg("Server unreachable — make sure both servers are running (npm start)."); }
     setAddUserLoading(false);
+  };
+
+  const resetUserPassword = async (target) => {
+    const confirmed = await askConfirm({
+      title: `Reset ${target.name}'s password?`,
+      message: "Their active sessions will be signed out. You will need to give them the new temporary password.",
+      confirmLabel: "Reset password",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setAddUserMsg("");
+    setTemporaryCredential(null);
+    try {
+      const res = await fetch("/api/admin/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ targetUserId: target.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAddUserMsg(`${target.name}'s password was reset! Their active sessions were signed out.`);
+        setTemporaryCredential({ name: target.name, password: data.temporaryPassword });
+      } else {
+        setAddUserMsg(data.error || "Failed");
+      }
+    } catch { setAddUserMsg("Server unreachable — make sure both servers are running (npm start)."); }
   };
 
   const setUserRole = async (targetId, role) => {
@@ -184,7 +214,7 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
         <div style={sectionTitle}>Change password</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <input style={styles.input} type="password" placeholder="Current password" value={curPwd} onChange={(e) => setCurPwd(e.target.value)} />
-          <input style={styles.input} type="password" placeholder="New password (min 4 chars)" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") savePwd(); }} />
+          <input style={styles.input} type="password" placeholder="New password (min 8 chars)" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") savePwd(); }} />
           <button style={styles.button} onClick={savePwd} disabled={pwdLoading}>{pwdLoading ? "Saving…" : "Change password"}</button>
         </div>
         {pwdMsg && <div style={{ fontSize: 12, color: msgOk(pwdMsg) ? "var(--byb-ok)" : "var(--byb-over)", marginTop: 5 }}>{pwdMsg}</div>}
@@ -210,10 +240,15 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{u.name}{u.id === activeUserId ? " (you)" : ""}</div>
                       <div style={{ fontSize: 11, color: styles.textMuted }}>{isAdminUser ? "Admin" : "Member"}</div>
                     </div>
-                    {u.id !== activeUserId && (
-                      <button style={{ ...styles.buttonGhost, fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => setUserRole(u.id, isAdminUser ? "member" : "admin")}>
-                        {isAdminUser ? "Remove admin" : "Make admin"}
-                      </button>
+                    {u.id !== activeUserId && u.role !== "owner" && (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <button style={{ ...styles.buttonGhost, fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => resetUserPassword(u)}>
+                          Reset password
+                        </button>
+                        <button style={{ ...styles.buttonGhost, fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => setUserRole(u.id, isAdminUser ? "member" : "admin")}>
+                          {isAdminUser ? "Remove admin" : "Make admin"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 );
@@ -237,6 +272,13 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
               <button style={styles.button} onClick={addUser} disabled={addUserLoading || !newUserName.trim()}>{addUserLoading ? "Adding…" : "Add user"}</button>
             </div>
             {addUserMsg && <div style={{ fontSize: 12, color: msgOk(addUserMsg) ? "var(--byb-ok)" : "var(--byb-over)", marginTop: 5 }}>{addUserMsg}</div>}
+            {temporaryCredential && (
+              <div style={{ marginTop: 10, padding: 12, borderRadius: 8, background: "var(--byb-surface-sunken)", border: `1px solid ${styles.border}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: styles.textMuted, marginBottom: 5 }}>Temporary password for {temporaryCredential.name}</div>
+                <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", fontSize: 13, overflowWrap: "anywhere", userSelect: "all" }}>{temporaryCredential.password}</div>
+                <div style={{ fontSize: 11, color: styles.textMuted, marginTop: 6 }}>Copy it now. It will not be shown again.</div>
+              </div>
+            )}
           </>
         )}
 
@@ -291,7 +333,7 @@ export function NameSetupModal({ authToken, activeUserId, onComplete, onSkip, st
     <div className="byb-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 400, display: "flex", alignItems: mobile ? "flex-end" : "center", justifyContent: "center", padding: mobile ? 0 : 16 }}>
       <div className={mobile ? "byb-sheet" : "byb-modal"} style={{ background: styles.surface, borderRadius: mobile ? "16px 16px 0 0" : 16, width: "100%", maxWidth: 420, padding: mobile ? "28px 20px 36px" : 40, boxSizing: "border-box", boxShadow: "0 8px 48px rgba(0,0,0,0.28)" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <img src="/logo.svg" alt="BYB!" style={{ width: 64, height: 64, borderRadius: "50%", background: PALETTE.secondary, padding: 6, objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
+          <img src="/logo.png" alt="BYB!" style={{ width: 64, height: 64, borderRadius: "50%", background: "#FFF", objectFit: "contain" }} onError={(e) => { e.target.style.display = "none"; }} />
           <div style={{ marginTop: 12, fontSize: 22, fontWeight: 800, color: PALETTE.primary }}>Welcome to BYB!</div>
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: styles.text }}>What should we call you?</div>

@@ -7,13 +7,30 @@ const HEADER_ALIASES = {
   debit: ["debit", "withdrawal", "withdrawals", "moneyout", "debitamount"],
   credit: ["credit", "deposit", "deposits", "moneyin", "creditamount"],
 };
+export const MAX_BANK_CSV_BYTES = 5 * 1024 * 1024;
+const MAX_CSV_TRANSACTION_ROWS = 50_000;
+
+function exceedsUtf8Bytes(text, limit) {
+  let bytes = 0;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length && text.charCodeAt(index + 1) >= 0xdc00 && text.charCodeAt(index + 1) <= 0xdfff) {
+      bytes += 4;
+      index++;
+    } else bytes += 3;
+    if (bytes > limit) return true;
+  }
+  return false;
+}
 
 const normaliseHeader = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 export const normaliseDescription = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 // RFC 4180 reader. Bank descriptions commonly contain commas, quotes and even
 // line breaks, so splitting lines/commas is not safe enough for statement data.
-export function parseCsv(text) {
+export function parseCsv(text, { maxRows = Number.POSITIVE_INFINITY } = {}) {
   const rows = [];
   let row = [];
   let field = "";
@@ -29,13 +46,19 @@ export function parseCsv(text) {
     else if (char === ",") { row.push(field); field = ""; }
     else if (char === "\n") {
       row.push(field.replace(/\r$/, ""));
-      if (row.some((value) => value !== "")) rows.push(row);
+      if (row.some((value) => value !== "")) {
+        rows.push(row);
+        if (rows.length > maxRows) throw new Error(`The CSV may contain at most ${MAX_CSV_TRANSACTION_ROWS.toLocaleString("en-AU")} transaction rows`);
+      }
       row = []; field = "";
     } else field += char;
   }
   if (quoted) throw new Error("The CSV has an unclosed quoted field");
   row.push(field.replace(/\r$/, ""));
-  if (row.some((value) => value !== "")) rows.push(row);
+  if (row.some((value) => value !== "")) {
+    rows.push(row);
+    if (rows.length > maxRows) throw new Error(`The CSV may contain at most ${MAX_CSV_TRANSACTION_ROWS.toLocaleString("en-AU")} transaction rows`);
+  }
   return rows;
 }
 
@@ -89,7 +112,12 @@ export const transactionFingerprint = (transaction) => [
 
 /** Parse common Australian bank statement CSV layouts into integer-cent rows. */
 export function parseBankCsv(text, existingTransactions = []) {
-  const matrix = parseCsv(text);
+  const source = String(text || "");
+  if (exceedsUtf8Bytes(source, MAX_BANK_CSV_BYTES)) {
+    throw new Error("The CSV must be 5 MB or smaller");
+  }
+  // One header plus the supported number of transaction rows.
+  const matrix = parseCsv(source, { maxRows: MAX_CSV_TRANSACTION_ROWS + 1 });
   if (matrix.length < 2) throw new Error("The CSV does not contain any transaction rows");
   const headers = matrix[0];
   const indexes = {

@@ -26,12 +26,12 @@ For every container matching `docker ps --filter name=byb`:
 them as one unit.** Restoring one without the other breaks the instance in a
 way that is not obvious:
 
-- A user who exists in `budget.json` but has no entry in `passwords.json` is
-  treated as a *first sign-in*. `server.js` sets their password to whatever is
-  typed at the login screen, and if that is the only password in the file, it
-  promotes them to `owner`. Restoring `budget.json` next to an empty or stale
-  `passwords.json` therefore hands the household account to whoever logs in
-  first.
+- A user who exists in `budget.json` but has no entry in `passwords.json` fails
+  closed with “Account setup required”. The only exception is an untouched
+  installation containing one owner and no password hashes. On an established
+  household, restore the matching password file or an admin must issue a new
+  temporary password for each affected non-owner; the owner cannot be reset by
+  another account.
 - A user who has an entry in `passwords.json` but is missing from the restored
   `budget.json` cannot log in at all — login checks the user list in
   `budget.json` before it ever looks at the password file.
@@ -95,11 +95,12 @@ file during a restore, so it is the right judge of whether the file is usable.
 The host's copy is piped in on standard input, so what is validated is the
 backup, not the original.
 
-`server.js` writes data with a plain `fs.writeFileSync` — no write-to-temp-then-
-rename — so a save landing mid-copy can produce a torn read. The copy-and-verify
-pair is therefore retried up to three times before it is called a failure. A
-genuinely corrupt source file fails all three and is reported, which is correct:
-if the live file is unparseable, you need to know tonight, not in six months.
+`server.js` writes each JSON file through a same-directory temporary file,
+flushes it and atomically renames it into place. The copy-and-verify pair is
+still retried up to three times because a valid save can land between the copy
+and the byte-for-byte comparison. A genuinely corrupt source file fails all
+three and is reported, which is correct: if the live file is unparseable, you
+need to know tonight, not in six months.
 
 `MANIFEST.txt` records the shape of every file:
 
@@ -394,9 +395,9 @@ the run goes green again.
 - **No encryption.** `passwords.json` holds bcrypt hashes, which are not
   plaintext but are worth brute-forcing offline. Keep the destination dataset's
   permissions tight.
-- **Crash-consistent, not atomic.** The server writes with a plain
-  `writeFileSync`, so a copy can catch a torn file. The script detects that and
-  retries; it cannot prevent it.
+- **Two files are not one transaction.** Individual JSON replacement is atomic,
+  but `budget.json` and `passwords.json` cannot be committed together. Keep and
+  restore the verified pair as one backup unit.
 - **Backups are only as good as the last restore you tested.** Restore into a
   scratch instance once in a while and confirm the household's data is really
   there.

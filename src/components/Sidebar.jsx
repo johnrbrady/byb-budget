@@ -15,7 +15,7 @@ export function Sidebar({ view, setView, dueCount, styles }) {
   return (
     <nav style={styles.sidebar} data-testid="sidebar">
       <div style={styles.brand}>
-        <img src="/logo.svg" alt="Ban' Yuh Belly Budgeting" style={styles.brandLogo} onError={(e) => { e.target.style.display = "none"; }} />
+        <img src="/logo.png" alt="Ban' Yuh Belly Budgeting" style={styles.brandLogo} onError={(e) => { e.target.style.display = "none"; }} />
         <div style={styles.brandText}>
           <span style={styles.brandTitle}>BYB!</span>
           <span style={styles.brandSubtitle}>Ban' Yuh Belly</span>

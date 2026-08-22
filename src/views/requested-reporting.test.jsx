@@ -112,6 +112,15 @@ test("a bank CSV is previewed, history selects its category, and approved rows a
   expect(meta.preDeduped).toBe(true);
 });
 
+test("an oversized bank file is rejected before its contents are read", async () => {
+  render(<ReportsHarness />);
+  fireEvent.click(screen.getByText("Import Transactions"));
+  const file = { name: "oversized.csv", size: 5 * 1024 * 1024 + 1, text: jest.fn().mockResolvedValue("Date,Description,Amount") };
+  fireEvent.change(screen.getByLabelText("Choose bank CSV"), { target: { files: [file] } });
+  expect(await screen.findByRole("alert")).toHaveTextContent("5 MB or smaller");
+  expect(file.text).not.toHaveBeenCalled();
+});
+
 test("the distribution pie switches from one month to any custom date range", () => {
   render(<ReportsHarness />);
   const card = screen.getByTestId("spending-distribution-card");

@@ -6,7 +6,7 @@ import { PieChart } from "../components/PieChart.jsx";
 import { CategorySpendingTrends } from "../components/CategorySpendingTrends.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { IconHistory, IconWallet } from "../components/Icons.jsx";
-import { categoryHistory, normaliseDescription, parseBankCsv } from "../lib/csvImport.js";
+import { MAX_BANK_CSV_BYTES, categoryHistory, normaliseDescription, parseBankCsv } from "../lib/csvImport.js";
 import { budgetHistoryCategories, budgetHistoryRows } from "../lib/budgetHistory.js";
 
 function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
@@ -292,6 +292,9 @@ My transactions and bank statement:
     setCsvPreview(null);
     if (!file) return;
     try {
+      if (Number.isFinite(file.size) && file.size > MAX_BANK_CSV_BYTES) {
+        throw new Error("The CSV must be 5 MB or smaller");
+      }
       const parsed = parseBankCsv(await file.text(), transactions);
       const history = categoryHistory(transactions);
       const fallback = {

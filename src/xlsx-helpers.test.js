@@ -25,6 +25,18 @@ test("XLSX export keeps human-facing values in dollars", async () => {
   expect(summary.getRow(3).getCell(2).value).toBe(19.99);
 });
 
+test("XLSX export keeps formula-looking descriptions as text", async () => {
+  const workbook = await buildExportWorkbook({
+    ...payload,
+    transactions: [{ ...payload.transactions[0], description: '=HYPERLINK("https://invalid.example","open")' }],
+  });
+  const transactions = workbook.getWorksheet("Transactions");
+  const descriptionColumn = transactions.getRow(1).values.indexOf("description");
+  const cell = transactions.getRow(2).getCell(descriptionColumn);
+  expect(cell.value).toBe('=HYPERLINK("https://invalid.example","open")');
+  expect(cell.type).toBe(ExcelJS.ValueType.String);
+});
+
 test("XLSX import converts dollars to cents and reports source rounding", async () => {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Transactions");
