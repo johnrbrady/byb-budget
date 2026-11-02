@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD, todayISO } from "../lib/utils.js";
+import { fmtMoney, todayISO } from "../lib/utils.js";
 import { envelopeTarget } from "../lib/targets.js";
 import { filterTransactions, totals } from "../lib/txQuery.js";
 import { TxForm } from "../components/forms.jsx";
@@ -35,8 +35,8 @@ function EnvelopeRow({ cat, spent, styles, onNavigate, onLongPress }) {
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: cat.colour, flexShrink: 0 }} />
         <span style={{ fontWeight: 600, flex: 1 }}>{cat.name}</span>
         {cat.isAccumulating && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 99, background: PALETTE.secondary + "55", color: PALETTE.primaryDeep, fontWeight: 700 }}>Saving</span>}
-        <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 14, color: balColour }}>{fmtAUD(balance)}</span>
-        <span style={{ fontSize: 11, color: styles.textMuted }}>/ {fmtAUD(base)}</span>
+        <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 14, color: balColour }}>{fmtMoney(balance)}</span>
+        <span style={{ fontSize: 11, color: styles.textMuted }}>/ {fmtMoney(base)}</span>
       </div>
       {base > 0 && (
         <div className="byb-meter" style={{ height: 6, marginBottom: 6 }} data-env-status={status}>
@@ -44,11 +44,11 @@ function EnvelopeRow({ cat, spent, styles, onNavigate, onLongPress }) {
         </div>
       )}
       <div style={{ fontSize: 11, color: styles.textMuted }}>
-        Spent <strong style={{ color: styles.text }}>{fmtAUD(spent)}</strong> this month
+        Spent <strong style={{ color: styles.text }}>{fmtMoney(spent)}</strong> this month
       </div>
       {target && (
         <div data-testid={`dashboard-target-${cat.id}`} style={{ fontSize: 11, color: target.status === "complete" || target.status === "on-track" ? "var(--byb-ok)" : "var(--byb-over)", fontWeight: 600, marginTop: 4 }}>
-          {target.status === "complete" ? `Target reached · ${fmtAUD(target.targetAmount)}` : `${fmtAUD(target.remaining)} left by ${target.targetDate} · ${fmtAUD(target.requiredMonthly)}/month`}
+          {target.status === "complete" ? `Target reached · ${fmtMoney(target.targetAmount)}` : `${fmtMoney(target.remaining)} left by ${target.targetDate} · ${fmtMoney(target.requiredMonthly)}/month`}
         </div>
       )}
     </div>
@@ -106,7 +106,7 @@ export function Dashboard({
             <AnimatedCurrency value={unallocatedBalance} data-testid="unallocated-balance" />
           </div>
           <div style={{ fontSize: 11, color: styles.textMuted }}>
-            {fmtAUD(totalBalance)} in envelopes · {fmtAUD(totalBase)}/mo base
+            {fmtMoney(totalBalance)} in envelopes · {fmtMoney(totalBase)}/mo base
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: mobile ? "100%" : "auto" }}>
@@ -180,7 +180,7 @@ export function Dashboard({
                 <div style={{ fontSize: 11, color: styles.textMuted, marginTop: 2 }}>{r.nextDueDate} · {r.frequency}</div>
               </div>
               <div style={{ fontWeight: 700, fontSize: 14, color: r.type === "income" ? "var(--byb-ok)" : styles.text, fontVariantNumeric: "tabular-nums" }}>
-                {r.type === "income" ? "+" : "−"}{fmtAUD(r.amount)}
+                {r.type === "income" ? "+" : "−"}{fmtMoney(r.amount)}
               </div>
             </div>
           ))}
@@ -196,7 +196,7 @@ export function Dashboard({
           actions={[
             ...((quickCat.baseAmount || 0) > 0 && onFillSingleEnvelope ? [{
               label: "Fill to target",
-              sub: `Top up to ${fmtAUD(quickCat.baseAmount || 0)} from Unallocated`,
+              sub: `Top up to ${fmtMoney(quickCat.baseAmount || 0)} from Unallocated`,
               icon: IconZap,
               onSelect: () => onFillSingleEnvelope(quickCat.id),
             }] : []),

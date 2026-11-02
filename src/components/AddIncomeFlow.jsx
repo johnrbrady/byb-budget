@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { centsToInput, fmtAUD, parseAUDToCents, todayISO } from "../lib/utils.js";
+import { centsToInput, fmtMoney, parseAUDToCents, todayISO } from "../lib/utils.js";
 import { IconPlus, IconCheck, IconZap, IconWallet, IconEnvelope } from "./Icons.jsx";
 
 // Unified "Add Income" flow — one place to log money coming in, from any
@@ -135,7 +135,7 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
           <button type="button"
             style={{ ...styles.buttonGhost, fontSize: 12, padding: "9px 12px", borderColor: PALETTE.primary, color: PALETTE.primaryDeep, display: "inline-flex", alignItems: "center", gap: 6 }}
             onClick={() => setAmount(centsToInput(recurringAmt))}>
-            <IconZap size={13} /> Stay Consistent ({fmtAUD(recurringAmt)})
+            <IconZap size={13} /> Stay Consistent ({fmtMoney(recurringAmt)})
           </button>
         )}
         <div style={{ minWidth: mobile ? "100%" : 150 }}>
@@ -149,11 +149,11 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <button type="button" style={allocOption(allocationMode === "unallocated")} onClick={() => setAllocationMode("unallocated")} data-testid="alloc-unallocated">
           <span style={{ fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconWallet size={14} /> Keep unallocated</span>
-          <span style={{ fontSize: 11, color: styles.textMuted }}>Decide later. Current: {fmtAUD(unallocatedBalance)}</span>
+          <span style={{ fontSize: 11, color: styles.textMuted }}>Decide later. Current: {fmtMoney(unallocatedBalance)}</span>
         </button>
         <button type="button" style={allocOption(allocationMode === "fill")} onClick={() => setAllocationMode("fill")} data-testid="alloc-fill">
           <span style={{ fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconZap size={14} /> Fill envelopes</span>
-          <span style={{ fontSize: 11, color: styles.textMuted }}>Top up to monthly targets ({fmtAUD(fillPreview)} needed)</span>
+          <span style={{ fontSize: 11, color: styles.textMuted }}>Top up to monthly targets ({fmtMoney(fillPreview)} needed)</span>
         </button>
         <button type="button" style={allocOption(allocationMode === "split")} onClick={() => setAllocationMode("split")} data-testid="alloc-split">
           <span style={{ fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}><IconEnvelope size={14} /> Specific envelopes</span>
@@ -167,7 +167,7 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
             <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
               <select style={{ ...styles.input, flex: 2 }} value={row.catId}
                 onChange={(e) => setSplits((prev) => prev.map((r, j) => j === i ? { ...r, catId: e.target.value } : r))}>
-                {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+                {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtMoney(c.envelopeBalance || 0)})</option>)}
               </select>
               <input style={{ ...styles.input, flex: 1, minWidth: 90 }} type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00"
                 value={row.amount}
@@ -185,8 +185,8 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
             </button>
             <span style={{ fontSize: 12, fontWeight: 600, color: splitRemaining < 0 ? "var(--byb-over)" : styles.textMuted }}>
               {splitRemaining < 0
-                ? `Over by ${fmtAUD(-splitRemaining)}`
-                : `${fmtAUD(splitRemaining)} of ${fmtAUD(parsedAmount)} stays unallocated`}
+                ? `Over by ${fmtMoney(-splitRemaining)}`
+                : `${fmtMoney(splitRemaining)} of ${fmtMoney(parsedAmount)} stays unallocated`}
             </span>
           </div>
         </div>
@@ -195,7 +195,7 @@ export function AddIncomeFlow({ categories, recurring, unallocatedBalance, onSub
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
         <button type="submit" style={{ ...styles.button, flex: 1, padding: "13px 16px", fontSize: 15, fontWeight: 700, opacity: canSubmit ? 1 : 0.5, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
           disabled={!canSubmit} data-testid="income-submit">
-          <IconCheck size={16} /> Add {parsedAmount > 0 ? fmtAUD(parsedAmount) : "income"}
+          <IconCheck size={16} /> Add {parsedAmount > 0 ? fmtMoney(parsedAmount) : "income"}
         </button>
         <button type="button" style={styles.buttonGhost} onClick={onCancel}>Cancel</button>
       </div>

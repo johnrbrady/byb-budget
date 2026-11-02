@@ -286,7 +286,7 @@ function validateBudgetData(data) {
   // `adjustments` before it ever reached a deployed instance. Current clients
   // never send it, but it stays accepted so that a client still running the
   // build that wrote it is not met with a 400 on every save.
-  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "adjustments", "openingBalances", "budgetHistory", "moneyScale", "dataVersion"];
+  const allowed = ["transactions", "categories", "recurring", "users", "unallocatedBalance", "assets", "transfers", "reconcileLog", "adjustments", "openingBalances", "budgetHistory", "moneyScale", "dataVersion", "settings", "currencyHistory"];
   for (const key of Object.keys(data)) {
     if (!allowed.includes(key)) return `Unknown field: ${key}`;
   }
@@ -300,6 +300,22 @@ function validateBudgetData(data) {
   if (data.adjustments && !Array.isArray(data.adjustments)) return "adjustments must be an array";
   if (data.budgetHistory && !Array.isArray(data.budgetHistory)) return "budgetHistory must be an array";
   if (data.openingBalances && !Array.isArray(data.openingBalances)) return "openingBalances must be an array";
+  if (data.currencyHistory && !Array.isArray(data.currencyHistory)) return "currencyHistory must be an array";
+  if (data.settings !== undefined) {
+    if (!data.settings || typeof data.settings !== "object" || Array.isArray(data.settings)) return "settings must be an object";
+    for (const key of Object.keys(data.settings)) {
+      if (key !== "currency") return `Unknown settings field: ${key}`;
+    }
+    if (data.settings.currency !== undefined && (typeof data.settings.currency !== "string" || !/^[A-Z]{3}$/.test(data.settings.currency))) {
+      return "settings.currency must be a 3-letter currency code";
+    }
+  }
+  for (const entry of data.currencyHistory || []) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return "currencyHistory must contain objects";
+    if (typeof entry.from !== "string" || !/^[A-Z]{3}$/.test(entry.from)) return "currencyHistory from must be a 3-letter currency code";
+    if (typeof entry.to !== "string" || !/^[A-Z]{3}$/.test(entry.to)) return "currencyHistory to must be a 3-letter currency code";
+    if (!Number.isFinite(entry.rate) || entry.rate <= 0) return "currencyHistory rate must be a positive number";
+  }
   if (data.unallocatedBalance !== undefined && typeof data.unallocatedBalance !== "number") {
     return "unallocatedBalance must be a number";
   }
@@ -311,6 +327,12 @@ function validateBudgetData(data) {
     if (!transaction || typeof transaction !== "object" || Array.isArray(transaction)) return "transactions must contain objects";
     if (transaction.type !== "income" && transaction.type !== "expense") return "transaction type must be income or expense";
     if (!Number.isSafeInteger(transaction.amount) || transaction.amount <= 0) return "transaction amount must be a positive safe integer";
+    const hasForeign = transaction.currency !== undefined || transaction.foreignAmount !== undefined || transaction.exchangeRate !== undefined;
+    if (hasForeign) {
+      if (typeof transaction.currency !== "string" || !/^[A-Z]{3}$/.test(transaction.currency)) return "transaction currency must be a 3-letter currency code";
+      if (!Number.isSafeInteger(transaction.foreignAmount) || transaction.foreignAmount <= 0) return "transaction foreignAmount must be a positive safe integer";
+      if (!Number.isFinite(transaction.exchangeRate) || transaction.exchangeRate <= 0) return "transaction exchangeRate must be a positive number";
+    }
   }
   for (const rule of data.recurring || []) {
     if (!rule || typeof rule !== "object" || Array.isArray(rule)) return "recurring must contain objects";
@@ -554,7 +576,17 @@ app.post("/api/data", requireAuth, (req, res) => {
     }
     // Identity and authorization data is server-owned. A normal household data
     // save may edit the shared ledger but can never add users or alter roles.
-    const next = { ...submitted, users: current.users || [], moneyScale: MONEY_SCALE, dataVersion: currentVersion + 1 };
+    const next = {
+      ...submitted,
+      users: current.users || [],
+      // Older tabs rebuild the whole document without these keys. Preserving the
+      // server's values stops such a save from silently erasing the household
+      // currency or its change history.
+      settings: submitted.settings ?? current.settings,
+      currencyHistory: submitted.currencyHistory ?? current.currencyHistory,
+      moneyScale: MONEY_SCALE,
+      dataVersion: currentVersion + 1,
+    };
     writeJSON(DATA_FILE, next);
     res.json({ ok: true, dataVersion: next.dataVersion });
   } catch {
@@ -603,6 +635,7 @@ app.get("/api/integrations/summary", requireApiKey, (req, res) => {
     res.json({
       generatedAt: now.toISOString(),
       month,
+      currency: data.settings?.currency || "AUD",
       unallocatedBalance: centsToDollars(data.unallocatedBalance || 0),
       totalInEnvelopes: centsToDollars(totalInEnvelopes),
       monthIncome: centsToDollars(monthIncome),

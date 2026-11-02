@@ -1,6 +1,6 @@
 import React from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD, todayISO } from "../lib/utils.js";
+import { fmtMoney, todayISO } from "../lib/utils.js";
 import { RuleForm } from "../components/forms.jsx";
 import { askConfirm } from "../components/ConfirmDialog.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
@@ -46,7 +46,7 @@ export function RecurringView({ recurring, categories, users, categoriesById, ac
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 600, fontSize: 15 }}>{r.label}</span>
                   <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 16, color: r.type === "income" ? "var(--byb-ok)" : styles.text }}>
-                    {r.type === "income" ? "+" : "−"}{fmtAUD(r.amount)}
+                    {r.type === "income" ? "+" : "−"}{fmtMoney(r.amount)}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -85,7 +85,7 @@ export function RecurringView({ recurring, categories, users, categoriesById, ac
                   <tr key={r.id} className="byb-hover-row">
                     <td style={styles.td}>{r.label}</td>
                     <td style={styles.td}>{r.type}</td>
-                    <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtAUD(r.amount)}</td>
+                    <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(r.amount)}</td>
                     <td style={styles.td}><span style={styles.pill(cat?.colour || "#999")}>{cat?.name || "?"}</span></td>
                     <td style={styles.td}>{r.frequency}</td>
                     <td style={styles.td}>{r.nextDueDate}</td>

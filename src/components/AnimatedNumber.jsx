@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { fmtAUD } from "../lib/utils.js";
+import { fmtMoney } from "../lib/utils.js";
 
 // Animates currency values with a short tick when they change.
 export function AnimatedCurrency({ value, duration = 400, style, ...props }) {
@@ -30,5 +30,5 @@ export function AnimatedCurrency({ value, duration = 400, style, ...props }) {
     return () => cancelAnimationFrame(rafRef.current);
   }, [value, duration]);
 
-  return <span style={{ fontVariantNumeric: "tabular-nums", ...style }} {...props}>{fmtAUD(display)}</span>;
+  return <span style={{ fontVariantNumeric: "tabular-nums", ...style }} {...props}>{fmtMoney(display)}</span>;
 }

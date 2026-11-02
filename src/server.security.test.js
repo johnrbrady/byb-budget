@@ -182,6 +182,80 @@ test("a direct API save cannot use a negative transaction to reverse ledger sema
   }
 });
 
+test("currency settings and foreign transaction fields are accepted, malformed ones rejected", async () => {
+  const server = await startServer();
+  try {
+    const ownerLogin = await login(server, OWNER_ID, OWNER_PASSWORD);
+    const loaded = await request(server.port, "GET", "/api/data", undefined, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    const withCurrency = {
+      ...loaded.body,
+      settings: { currency: "USD" },
+      currencyHistory: [{ id: "h1", date: "2026-06-15", from: "AUD", to: "USD", rate: 0.65 }],
+      transactions: [{
+        id: "t-foreign",
+        date: "2026-06-15",
+        type: "expense",
+        amount: 12000,
+        currency: "EUR",
+        foreignAmount: 7500,
+        exchangeRate: 1.6,
+        categoryId: "c-synthetic",
+        description: "Overseas",
+        addedBy: OWNER_ID,
+      }],
+    };
+    const save = await request(server.port, "POST", "/api/data", withCurrency, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(save.status).toBe(200);
+
+    const badCurrency = await request(server.port, "POST", "/api/data", {
+      ...withCurrency, settings: { currency: "usd" },
+    }, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(badCurrency.status).toBe(400);
+    expect(badCurrency.body.error).toContain("settings.currency");
+
+    const badRate = await request(server.port, "POST", "/api/data", {
+      ...withCurrency,
+      currencyHistory: [{ from: "AUD", to: "USD", rate: 0 }],
+    }, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(badRate.status).toBe(400);
+    expect(badRate.body.error).toContain("currencyHistory rate");
+
+    const badForeign = await request(server.port, "POST", "/api/data", {
+      ...withCurrency,
+      transactions: [{ ...withCurrency.transactions[0], foreignAmount: 0 }],
+    }, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(badForeign.status).toBe(400);
+    expect(badForeign.body.error).toContain("foreignAmount");
+  } finally {
+    server.stop();
+  }
+});
+
+test("a save from an older client preserves currency settings", async () => {
+  const server = await startServer();
+  try {
+    const ownerLogin = await login(server, OWNER_ID, OWNER_PASSWORD);
+    const loaded = await request(server.port, "GET", "/api/data", undefined, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    const first = await request(server.port, "POST", "/api/data", {
+      ...loaded.body,
+      settings: { currency: "USD" },
+      currencyHistory: [{ id: "h1", date: "2026-06-15", from: "AUD", to: "USD", rate: 0.65 }],
+    }, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(first.status).toBe(200);
+
+    const afterFirst = await request(server.port, "GET", "/api/data", undefined, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    const { settings, currencyHistory, ...oldClientDocument } = afterFirst.body;
+    const second = await request(server.port, "POST", "/api/data", { ...oldClientDocument, unallocatedBalance: 1234 }, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(second.status).toBe(200);
+
+    const afterSecond = await request(server.port, "GET", "/api/data", undefined, ownerLogin.body.token, { "X-BYB-Money-Scale": "100" });
+    expect(afterSecond.body.settings).toEqual({ currency: "USD" });
+    expect(afterSecond.body.currencyHistory).toHaveLength(1);
+  } finally {
+    server.stop();
+  }
+});
+
 test("an admin-created account receives a generated credential and cannot be claimed with an arbitrary first password", async () => {
   const server = await startServer();
   try {

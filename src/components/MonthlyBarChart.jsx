@@ -1,5 +1,5 @@
 import React from "react";
-import { fmtAUD, formatMonth, formatMonthShort } from "../lib/utils.js";
+import { fmtMoney, formatMonth, formatMonthShort } from "../lib/utils.js";
 
 export function MonthlyBarChart({ series, colour, label }) {
   const width = 360;
@@ -36,7 +36,7 @@ export function MonthlyBarChart({ series, colour, label }) {
         const current = index === series.length - 1;
         return (
           <g key={point.month} data-testid={`spending-bar-${point.month}`} data-value={point.amount}>
-            <title>{formatMonth(point.month)}: {fmtAUD(point.amount)}</title>
+            <title>{formatMonth(point.month)}: {fmtMoney(point.amount)}</title>
             <rect
               x={x}
               y={y}
@@ -58,7 +58,7 @@ export function MonthlyBarChart({ series, colour, label }) {
           </g>
         );
       })}
-      <text x="0" y="10" fill="var(--byb-text-muted)" fontSize="9">{fmtAUD(max)}</text>
+      <text x="0" y="10" fill="var(--byb-text-muted)" fontSize="9">{fmtMoney(max)}</text>
       <text x="0" y={baseline - 4} fill="var(--byb-text-muted)" fontSize="9">$0</text>
     </svg>
   );

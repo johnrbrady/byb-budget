@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { centsToInput, fmtAUD, monthKey, parseAUDToCents, todayISO, formatMonth } from "../lib/utils.js";
+import { centsToInput, fmtMoney, monthKey, parseAUDToCents, todayISO, formatMonth } from "../lib/utils.js";
 import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { PieChart } from "../components/PieChart.jsx";
 import { CategorySpendingTrends } from "../components/CategorySpendingTrends.jsx";
@@ -8,6 +8,7 @@ import { EmptyState } from "../components/EmptyState.jsx";
 import { IconHistory, IconWallet } from "../components/Icons.jsx";
 import { MAX_BANK_CSV_BYTES, categoryHistory, normaliseDescription, parseBankCsv } from "../lib/csvImport.js";
 import { budgetHistoryCategories, budgetHistoryRows } from "../lib/budgetHistory.js";
+import { getActiveCurrency } from "../lib/currency.js";
 
 function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   const [editing, setEditing] = useState(false);
@@ -18,7 +19,7 @@ function UnallocatedEditor({ unallocatedBalance, onSetUnallocated, styles }) {
   if (!editing) {
     return (
       <button style={{ ...styles.buttonGhost, whiteSpace: "nowrap" }} onClick={() => { setVal(centsToInput(unallocatedBalance)); setEditing(true); }}>
-        Edit Unallocated ({fmtAUD(unallocatedBalance)})
+        Edit Unallocated ({fmtMoney(unallocatedBalance)})
       </button>
     );
   }
@@ -54,10 +55,10 @@ function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
       style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", flexWrap: "wrap" }}>
       <span style={styles.pill(colour(m.catId))}>{name(m.catId)}</span>
       <span style={{ fontSize: 12, color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
-        {fmtAUD(m.before)} → {fmtAUD(m.after)}
+        {fmtMoney(m.before)} → {fmtMoney(m.after)}
       </span>
       <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 13, minWidth: 88, textAlign: "right", color: m.amount < 0 ? styles.text : "var(--byb-ok)" }}>
-        {m.amount < 0 ? "−" : "+"}{fmtAUD(Math.abs(m.amount))}
+        {m.amount < 0 ? "−" : "+"}{fmtMoney(Math.abs(m.amount))}
       </span>
     </div>
   );
@@ -73,11 +74,11 @@ function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
           </span>
         </span>
         <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
-          <span style={{ color: "var(--byb-ok)", fontWeight: 700 }}>{fmtAUD(entry.pooled)}</span> redistributed
+          <span style={{ color: "var(--byb-ok)", fontWeight: 700 }}>{fmtMoney(entry.pooled)}</span> redistributed
         </span>
       </div>
       <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>
-        {entry.toppedUp} envelope{entry.toppedUp === 1 ? "" : "s"} topped up · {fmtAUD(entry.returned)} returned to Unallocated
+        {entry.toppedUp} envelope{entry.toppedUp === 1 ? "" : "s"} topped up · {fmtMoney(entry.returned)} returned to Unallocated
       </div>
     </>
   );
@@ -112,7 +113,7 @@ function ReconcileEntry({ entry, categoriesById, usersById, styles }) {
           )}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 12, paddingTop: 8, borderTop: `1px solid ${styles.border}`, fontSize: 13 }}>
             <span style={{ color: styles.textMuted }}>Returned to Unallocated</span>
-            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--byb-ok)" }}>{fmtAUD(entry.returned)}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--byb-ok)" }}>{fmtMoney(entry.returned)}</span>
           </div>
         </div>
       )}
@@ -144,7 +145,7 @@ function AdjustmentEntry({ entry, categoriesById, usersById, styles }) {
   const expandable = entries.length > 0 || !!entry.unallocated;
   const name = (catId) => categoriesById?.[catId]?.name || "Deleted envelope";
   const colour = (catId) => categoriesById?.[catId]?.colour || "#999";
-  const signed = (n) => `${n < 0 ? "−" : "+"}${fmtAUD(Math.abs(n))}`;
+  const signed = (n) => `${n < 0 ? "−" : "+"}${fmtMoney(Math.abs(n))}`;
   const hasTotals = typeof entry.before === "number" && typeof entry.after === "number";
 
   const envRow = (m) => (
@@ -153,7 +154,7 @@ function AdjustmentEntry({ entry, categoriesById, usersById, styles }) {
       <span style={styles.pill(colour(m.catId))}>{name(m.catId)}</span>
       {typeof m.before === "number" && typeof m.after === "number" && (
         <span style={{ fontSize: 12, color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
-          {fmtAUD(m.before)} → {fmtAUD(m.after)}
+          {fmtMoney(m.before)} → {fmtMoney(m.after)}
         </span>
       )}
       <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 13, minWidth: 88, textAlign: "right", color: m.amount < 0 ? styles.text : "var(--byb-ok)" }}>
@@ -179,7 +180,7 @@ function AdjustmentEntry({ entry, categoriesById, usersById, styles }) {
       </div>
       <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>
         {ADJUSTMENT_LABELS[entry.kind] || "Balance adjustment"}
-        {hasTotals && <> · total held {fmtAUD(entry.before)} → {fmtAUD(entry.after)}</>}
+        {hasTotals && <> · total held {fmtMoney(entry.before)} → {fmtMoney(entry.after)}</>}
       </div>
     </>
   );
@@ -210,7 +211,7 @@ function AdjustmentEntry({ entry, categoriesById, usersById, styles }) {
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 12, paddingTop: 8, borderTop: `1px solid ${styles.border}`, fontSize: 13 }}>
               <span style={{ color: styles.textMuted }}>Unallocated</span>
               <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
-                {fmtAUD(entry.unallocated.before)} → {fmtAUD(entry.unallocated.after)}
+                {fmtMoney(entry.unallocated.before)} → {fmtMoney(entry.unallocated.after)}
               </span>
             </div>
           )}
@@ -389,7 +390,7 @@ My transactions and bank statement:
           <div>
             <div style={styles.kpiLabel}>Total net worth</div>
             <div style={{ fontSize: styles.isMobile ? 28 : 36, fontWeight: 800, letterSpacing: -1, color: netWorth >= 0 ? "var(--byb-ok)" : "var(--byb-over)", lineHeight: 1.1 }}>
-              {fmtAUD(netWorth)}
+              {fmtMoney(netWorth)}
             </div>
           </div>
           {assetForm === null && (
@@ -402,7 +403,7 @@ My transactions and bank statement:
           <div className="byb-panel" style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
             <input style={{ ...styles.input, flex: 2, minWidth: 140 }} placeholder="Asset name (e.g. Superannuation)" value={assetName} onChange={(e) => setAssetName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitAsset(); if (e.key === "Escape") closeAssetForm(); }} autoFocus />
-            <input style={{ ...styles.input, flex: 1, minWidth: 120 }} type="number" step="0.01" inputMode="decimal" placeholder="Value ($)" value={assetValue} onChange={(e) => setAssetValue(e.target.value)}
+            <input style={{ ...styles.input, flex: 1, minWidth: 120 }} type="number" step="0.01" inputMode="decimal" placeholder={`Value (${getActiveCurrency()})`} value={assetValue} onChange={(e) => setAssetValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitAsset(); if (e.key === "Escape") closeAssetForm(); }} />
             <button style={{ ...styles.button, whiteSpace: "nowrap" }} onClick={submitAsset}>{assetForm.id ? "Update" : "Add"}</button>
             <button style={{ ...styles.buttonGhost, whiteSpace: "nowrap" }} onClick={closeAssetForm}>Cancel</button>
@@ -416,7 +417,7 @@ My transactions and bank statement:
         {assets.map((a) => (
           <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${styles.border}`, gap: 8 }}>
             <span style={{ fontWeight: 500, flex: 1 }}>{a.name}</span>
-            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--byb-ok)", fontSize: 15, whiteSpace: "nowrap" }}>{fmtAUD(a.value)}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "var(--byb-ok)", fontSize: 15, whiteSpace: "nowrap" }}>{fmtMoney(a.value)}</span>
             <button style={{ ...styles.buttonGhost, fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => openEditAsset(a)}>Edit</button>
             <button style={{ ...styles.buttonDanger, fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }} onClick={() => onDeleteAsset(a.id)}>Delete</button>
           </div>
@@ -481,7 +482,7 @@ My transactions and bank statement:
                       <div key={row.previewId} data-testid="csv-preview-row" style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr" : "90px minmax(130px, 1fr) 100px minmax(130px, 180px)", gap: 8, alignItems: "center", padding: 8, borderBottom: `1px solid ${styles.border}` }}>
                         <span style={{ fontSize: 12 }}>{row.date}</span>
                         <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{row.description}</span>
-                        <strong style={{ color: row.type === "income" ? "var(--byb-ok)" : "var(--byb-over)", fontVariantNumeric: "tabular-nums" }}>{row.type === "income" ? "+" : "−"}{fmtAUD(row.amount)}</strong>
+                        <strong style={{ color: row.type === "income" ? "var(--byb-ok)" : "var(--byb-over)", fontVariantNumeric: "tabular-nums" }}>{row.type === "income" ? "+" : "−"}{fmtMoney(row.amount)}</strong>
                         <label>
                           <span className="sr-only">Category for {row.description}</span>
                           <select aria-label={`Category for ${row.description}`} style={{ ...styles.input, width: "100%" }} value={row.categoryId} onChange={(event) => setCsvCategory(row.previewId, event.target.value)}>
@@ -531,10 +532,10 @@ My transactions and bank statement:
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: styles.isMobile ? 10 : 12, marginBottom: styles.isMobile ? 16 : 24 }}>
-        <div style={styles.card}><div style={styles.kpiLabel}>Income</div><div style={styles.kpiValue}>{fmtAUD(income)}</div></div>
-        <div style={styles.card}><div style={styles.kpiLabel}>Expenses</div><div style={styles.kpiValue}>{fmtAUD(expenses)}</div></div>
-        <div style={styles.card}><div style={styles.kpiLabel}>Net</div><div style={{ ...styles.kpiValue, color: net >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }}>{fmtAUD(net)}</div></div>
-        <div style={styles.card}><div style={styles.kpiLabel}>Avg daily spend</div><div style={styles.kpiValue}>{fmtAUD(avgDaily)}</div></div>
+        <div style={styles.card}><div style={styles.kpiLabel}>Income</div><div style={styles.kpiValue}>{fmtMoney(income)}</div></div>
+        <div style={styles.card}><div style={styles.kpiLabel}>Expenses</div><div style={styles.kpiValue}>{fmtMoney(expenses)}</div></div>
+        <div style={styles.card}><div style={styles.kpiLabel}>Net</div><div style={{ ...styles.kpiValue, color: net >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }}>{fmtMoney(net)}</div></div>
+        <div style={styles.card}><div style={styles.kpiLabel}>Avg daily spend</div><div style={styles.kpiValue}>{fmtMoney(avgDaily)}</div></div>
         <div style={{ ...styles.card, gridColumn: styles.isMobile ? "span 2" : "auto" }}><div style={styles.kpiLabel}>Top category</div><div style={{ ...styles.kpiValue, fontSize: 16 }}>{topCat}</div></div>
       </div>
 
@@ -585,9 +586,9 @@ My transactions and bank statement:
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12 }}>
                 <span style={{ color: styles.text, fontWeight: 500 }}>{formatMonth(m.month)}</span>
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>
-                  <span style={{ color: "var(--byb-ok)" }}>+{fmtAUD(m.income)}</span>
+                  <span style={{ color: "var(--byb-ok)" }}>+{fmtMoney(m.income)}</span>
                   {" · "}
-                  <span style={{ color: PALETTE.warn }}>−{fmtAUD(m.expense)}</span>
+                  <span style={{ color: PALETTE.warn }}>−{fmtMoney(m.expense)}</span>
                 </span>
               </div>
             )}
@@ -598,8 +599,8 @@ My transactions and bank statement:
             </div>
             {!styles.isMobile && (
               <div style={{ fontSize: 11, color: styles.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                <div style={{ color: "var(--byb-ok)" }}>+{fmtAUD(m.income)}</div>
-                <div>−{fmtAUD(m.expense)}</div>
+                <div style={{ color: "var(--byb-ok)" }}>+{fmtMoney(m.income)}</div>
+                <div>−{fmtMoney(m.expense)}</div>
               </div>
             )}
           </div>
@@ -636,10 +637,10 @@ My transactions and bank statement:
             {historicalBudgets.map((row) => (
               <div key={row.month} data-testid="budget-history-row" style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr 1fr" : "minmax(130px, 1fr) repeat(3, minmax(110px, 1fr))", gap: 8, padding: "9px 0", borderBottom: `1px solid ${styles.border}`, alignItems: "baseline" }}>
                 <strong style={{ gridColumn: styles.isMobile ? "span 2" : "auto" }}>{formatMonth(row.month)}</strong>
-                <span><span style={{ color: styles.textMuted, fontSize: 11 }}>Budgeted</span><br /><strong>{row.hasPlan ? fmtAUD(row.budgeted) : "—"}</strong></span>
-                <span><span style={{ color: styles.textMuted, fontSize: 11 }}>Spent</span><br /><strong>{fmtAUD(row.spent)}</strong></span>
+                <span><span style={{ color: styles.textMuted, fontSize: 11 }}>Budgeted</span><br /><strong>{row.hasPlan ? fmtMoney(row.budgeted) : "—"}</strong></span>
+                <span><span style={{ color: styles.textMuted, fontSize: 11 }}>Spent</span><br /><strong>{fmtMoney(row.spent)}</strong></span>
                 <span style={{ color: row.variance >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }}>
-                  <span style={{ fontSize: 11 }}>{row.variance >= 0 ? "Under by" : "Over by"}</span><br /><strong>{fmtAUD(Math.abs(row.variance))}</strong>
+                  <span style={{ fontSize: 11 }}>{row.variance >= 0 ? "Under by" : "Over by"}</span><br /><strong>{fmtMoney(Math.abs(row.variance))}</strong>
                 </span>
               </div>
             ))}
@@ -672,7 +673,7 @@ My transactions and bank statement:
               <div key={t.id} style={styles.txCard}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: styles.textMuted }}>{t.date}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{fmtAUD(t.amount)}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{fmtMoney(t.amount)}</span>
                 </div>
                 <div style={{ fontSize: 13 }}>
                   <span style={styles.pill(categoriesById[t.fromId]?.colour || "#999")}>{categoriesById[t.fromId]?.name || "?"}</span>
@@ -697,7 +698,7 @@ My transactions and bank statement:
                     <td style={styles.td}>{t.date}</td>
                     <td style={styles.td}><span style={styles.pill(categoriesById[t.fromId]?.colour || "#999")}>{categoriesById[t.fromId]?.name || "?"}</span></td>
                     <td style={styles.td}><span style={styles.pill(categoriesById[t.toId]?.colour || "#999")}>{categoriesById[t.toId]?.name || "?"}</span></td>
-                    <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmtAUD(t.amount)}</td>
+                    <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmtMoney(t.amount)}</td>
                   </tr>
                 ))}
               </tbody>

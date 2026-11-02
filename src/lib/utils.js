@@ -1,9 +1,13 @@
-import { MONEY_SCALE, centsToInput, parseAUDToCents, parseImportedAUDToCents } from "../../money-schema.js";
+import { centsToInput, parseAUDToCents, parseImportedAUDToCents } from "../../money-schema.js";
+import { formatMoney } from "./currency.js";
 
 export const uid = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "id-" + Math.random().toString(36).slice(2, 10));
 
-export const fmtAUD = (cents) => new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format((cents || 0) / MONEY_SCALE);
+export const fmtMoney = formatMoney;
+
+/** @deprecated Use fmtMoney. Kept as an alias for older imports. */
+export const fmtAUD = (cents) => formatMoney(cents);
 
 export { centsToInput, parseAUDToCents, parseImportedAUDToCents };
 

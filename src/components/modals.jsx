@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
+import { CURRENCIES, DEFAULT_CURRENCY, currencyName, formatMoney, parseRateToRational } from "../lib/currency.js";
 import { IconMoon, IconSun, IconClose } from "./Icons.jsx";
 import { askConfirm } from "./ConfirmDialog.jsx";
 
-export function WelcomeModal({ onClose, styles }) {
+export function WelcomeModal({ onClose, styles, currencyPicker = false, currency = DEFAULT_CURRENCY, onSelectCurrency }) {
   const mobile = styles.isMobile;
   const p = { marginBottom: 14, lineHeight: 1.8 };
+  const [selectedCurrency, setSelectedCurrency] = useState(currency || DEFAULT_CURRENCY);
   return (
     <div className="byb-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, display: "flex", alignItems: mobile ? "flex-end" : "center", justifyContent: "center", padding: mobile ? 0 : 16 }}>
       <div className={mobile ? "byb-sheet" : "byb-modal"} style={{ background: styles.surface, borderRadius: mobile ? "16px 16px 0 0" : 16, width: "100%", maxWidth: 560, maxHeight: mobile ? "93vh" : "90vh", overflow: "auto", padding: mobile ? "24px 18px 36px" : 40, boxSizing: "border-box", boxShadow: "0 8px 48px rgba(0,0,0,0.25)" }}>
@@ -46,9 +48,27 @@ export function WelcomeModal({ onClose, styles }) {
           </ol>
         </div>
 
+        {currencyPicker && (
+          <div style={{ background: "var(--byb-surface-sunken)", border: `1px solid ${styles.border}`, borderRadius: 8, padding: "14px 16px", marginBottom: 18 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Household currency</div>
+            <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 10 }}>
+              This is the currency every balance, budget and report will use. It can be changed later in Settings.
+            </div>
+            <select
+              style={styles.input}
+              value={selectedCurrency}
+              onChange={(e) => setSelectedCurrency(e.target.value)}
+              data-testid="welcome-currency"
+              aria-label="Household currency"
+            >
+              {CURRENCIES.map((code) => <option key={code} value={code}>{code} — {currencyName(code)}</option>)}
+            </select>
+          </div>
+        )}
+
         <button
           style={{ ...styles.button, width: "100%", marginTop: 32, padding: 16, fontSize: 15, fontWeight: 700, borderRadius: 10 }}
-          onClick={onClose}
+          onClick={() => { if (currencyPicker) onSelectCurrency?.(selectedCurrency); onClose(); }}
         >
           Agree and let's get started
         </button>
@@ -57,7 +77,7 @@ export function WelcomeModal({ onClose, styles }) {
   );
 }
 
-export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTheme, activeUserId, onShowWelcome, onResetBalances, onClose, styles }) {
+export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme, setTheme, activeUserId, currency = DEFAULT_CURRENCY, currencyHistory = [], householdTotal = 0, onChangeCurrency, onShowWelcome, onResetBalances, onClose, styles }) {
   const [nameVal, setNameVal] = useState(user?.name || "");
   const [nameLoading, setNameLoading] = useState(false);
   const [nameMsg, setNameMsg] = useState("");
@@ -71,9 +91,18 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
   const [addUserLoading, setAddUserLoading] = useState(false);
   const [addUserMsg, setAddUserMsg] = useState("");
   const [temporaryCredential, setTemporaryCredential] = useState(null);
+  const [newCurrency, setNewCurrency] = useState(currency);
+  const [rateText, setRateText] = useState("");
+  const [currencyBusy, setCurrencyBusy] = useState(false);
 
   const mobile = styles.isMobile;
   const dark = styles.dark;
+  const lastCurrencyChange = currencyHistory?.[0] || null;
+  const validRate = (() => {
+    try { parseRateToRational(rateText); return true; } catch { return false; }
+  })();
+  const rateNumber = Number(rateText);
+  const previewTotal = Number.isFinite(rateNumber) && rateNumber > 0 ? Math.round(householdTotal * rateNumber) : null;
 
   const saveName = async () => {
     if (!nameVal.trim()) return;
@@ -225,6 +254,71 @@ export function SettingsModal({ user, users, setUsers, authToken, isAdmin, theme
           <button style={{ ...(dark ? styles.button : styles.buttonGhost), flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => setTheme("dark")}><IconMoon size={15} /> Dark</button>
           <button style={{ ...(!dark ? styles.button : styles.buttonGhost), flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => setTheme("light")}><IconSun size={15} /> Light</button>
         </div>
+
+        {/* Household currency — destructive enough to be admin-only, because it
+            rewrites every stored amount rather than changing what is displayed. */}
+        {isAdmin && (
+          <>
+            <div style={sectionTitle}>Household currency</div>
+            <div style={{ fontSize: 13, color: styles.text, marginBottom: 8 }}>
+              Current: <strong>{currency}</strong> — {currencyName(currency)}
+            </div>
+            <select
+              style={styles.input}
+              value={newCurrency}
+              onChange={(e) => { setNewCurrency(e.target.value); setRateText(""); }}
+              aria-label="New household currency"
+              data-testid="settings-currency-select"
+            >
+              {CURRENCIES.map((code) => <option key={code} value={code}>{code} — {currencyName(code)}</option>)}
+            </select>
+            {newCurrency !== currency && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>
+                  Every stored balance, budget, transaction, asset, recurring rule and history entry will be rewritten.
+                </div>
+                <div style={styles.label}>1 {currency} = ___ {newCurrency}</div>
+                <input
+                  style={styles.input}
+                  type="number"
+                  min="0"
+                  step="0.00000001"
+                  inputMode="decimal"
+                  placeholder="e.g. 0.65"
+                  value={rateText}
+                  onChange={(e) => setRateText(e.target.value)}
+                  aria-label={`Exchange rate from ${currency} to ${newCurrency}`}
+                  data-testid="settings-currency-rate"
+                />
+                <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 6 }} data-testid="settings-currency-preview">
+                  {previewTotal === null
+                    ? "Enter a positive rate to preview the household total."
+                    : `Household total becomes ${formatMoney(previewTotal, newCurrency)}.`}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--byb-over)", marginTop: 6 }}>
+                  This is not a display setting: it rewrites stored amounts and cannot be undone.
+                </div>
+              </div>
+            )}
+            <button
+              style={{ ...styles.button, width: "100%", marginTop: 10 }}
+              disabled={newCurrency === currency || !validRate || currencyBusy}
+              data-testid="settings-currency-change"
+              onClick={async () => {
+                setCurrencyBusy(true);
+                await onChangeCurrency?.(newCurrency, rateText);
+                setCurrencyBusy(false);
+              }}
+            >
+              {currencyBusy ? "Changing…" : "Change household currency"}
+            </button>
+            {lastCurrencyChange && (
+              <div style={{ fontSize: 11, color: styles.textMuted, marginTop: 8 }} data-testid="settings-currency-last">
+                Last change: {lastCurrencyChange.from} → {lastCurrencyChange.to} at {lastCurrencyChange.rate} on {lastCurrencyChange.date}
+              </div>
+            )}
+          </>
+        )}
 
         {/* Admin: user management */}
         {isAdmin && (
