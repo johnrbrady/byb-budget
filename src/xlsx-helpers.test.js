@@ -49,6 +49,32 @@ test("XLSX import converts dollars to cents and reports source rounding", async 
   expect(result.added.map((row) => row.amount)).toEqual([1999, 101]);
 });
 
+test("XLSX export writes foreign amounts as major units", async () => {
+  const workbook = await buildExportWorkbook({
+    ...payload,
+    transactions: [{ ...payload.transactions[0], currency: "EUR", foreignAmount: 7500, exchangeRate: 1.6 }],
+  });
+  const transactions = workbook.getWorksheet("Transactions");
+  const headers = transactions.getRow(1).values;
+  expect(transactions.getRow(2).getCell(headers.indexOf("currency")).value).toBe("EUR");
+  expect(transactions.getRow(2).getCell(headers.indexOf("foreignAmount")).value).toBe(75);
+  expect(transactions.getRow(2).getCell(headers.indexOf("exchangeRate")).value).toBe(1.6);
+});
+
+test("XLSX import carries valid foreign fields and falls back otherwise", async () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Transactions");
+  sheet.addRow(["id", "date", "type", "amount", "categoryId", "addedBy", "currency", "foreignAmount", "exchangeRate"]);
+  sheet.addRow(["a", "2026-06-15", "expense", 120, "c-groceries", "u-john", "EUR", 75, 1.6]);
+  sheet.addRow(["b", "2026-06-16", "expense", 20, "c-groceries", "u-john", "AUD", 999, 1.6]);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const result = await importFromXlsx({ arrayBuffer: async () => buffer }, { categories, users, currency: "AUD" });
+  expect(result.added[0]).toMatchObject({ amount: 12000, currency: "EUR", foreignAmount: 7500, exchangeRate: 1.6 });
+  expect(result.added[1]).toMatchObject({ amount: 2000 });
+  expect(result.added[1].currency).toBeUndefined();
+  expect(result.added[1].foreignAmount).toBeUndefined();
+});
+
 test("export filename uses the Melbourne calendar date", async () => {
   const originalCreate = URL.createObjectURL;
   const originalRevoke = URL.revokeObjectURL;

@@ -144,8 +144,9 @@ export function applyTxEffect(ledger, tx, factor) {
 // proportionally rather than dropping envelopes out of it. Largest-remainder
 // apportionment distributes indivisible cents deterministically and preserves
 // the exact target without ever making the last row negative.
-function scaleAllocationsTo(allocations, amount) {
+export function clampAllocations(allocations, amount) {
   moneyInteger(amount, "transaction amount");
+  if (!Array.isArray(allocations)) return [];
   allocations.forEach((allocation) => moneyInteger(allocation.amount, "allocation amount"));
   const total = allocations.reduce((s, a) => s + a.amount, 0);
   if (total <= amount || total <= 0) return allocations;
@@ -155,7 +156,7 @@ function scaleAllocationsTo(allocations, amount) {
     const numerator = BigInt(allocation.amount) * target;
     return { index, floor: numerator / denominator, remainder: numerator % denominator };
   });
-  let left = amount - shares.reduce((sum, share) => sum + Number(share.floor), 0);
+  const left = amount - shares.reduce((sum, share) => sum + Number(share.floor), 0);
   const ranked = [...shares].sort((a, b) =>
     a.remainder === b.remainder ? a.index - b.index : (a.remainder > b.remainder ? -1 : 1)
   );
@@ -164,6 +165,10 @@ function scaleAllocationsTo(allocations, amount) {
     ...allocation,
     amount: Number(shares[index].floor) + (bonus.has(index) ? 1 : 0),
   }));
+}
+
+function scaleAllocationsTo(allocations, amount) {
+  return clampAllocations(allocations, amount);
 }
 
 /**

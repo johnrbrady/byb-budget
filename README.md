@@ -97,7 +97,11 @@ All data lives in `data/` next to `server.js` (or `BYB_DATA_DIR`):
   transfers, reconcile log, and a `dataVersion` counter used to detect
   concurrent edits. Money is stored as integer cents and marked with
   `moneyScale: 100`; display, XLSX, webhooks and integration responses remain
-  ordinary AUD dollars.
+  ordinary main-currency units. `settings.currency` holds the household's main
+  currency (absent means AUD) and `currencyHistory` records each change.
+  Foreign expenses also carry `currency`, a native-minor-unit `foreignAmount`,
+  and the derived `exchangeRate`; those two numeric fields are deliberately not
+  converted by the cents migration.
 - `passwords.json` — bcrypt hashes. Only a brand-new installation with one
   owner and no hashes can set its first password at sign-in. Admin-created
   accounts receive a generated temporary password.
@@ -127,7 +131,9 @@ node migrate-money.js --dry-run /path/to/budget.json
 Rollback is a paired operation: stop the cents-aware image, restore the
 pre-cents `budget.json` (plus its matching `passwords.json` when restoring a
 scheduled backup), clear sessions, then start the prior image. Never run an old
-dollar-based image against a `moneyScale: 100` file.
+dollar-based image against a `moneyScale: 100` file, and never run a server
+built before currency support against a file that carries `settings` or
+`currencyHistory` — those fields are rejected as unknown on every save.
 
 New clients identify cents requests with `X-BYB-Money-Scale: 100`. Legacy tabs
 remain dollar-compatible; the migration's one-time `dataVersion` bump makes a

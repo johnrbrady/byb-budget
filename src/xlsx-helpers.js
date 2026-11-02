@@ -1,5 +1,6 @@
 import { centsToDollars, parseImportedAUDToCents } from "../money-schema.js";
 import { todayISO } from "./lib/utils.js";
+import { DEFAULT_CURRENCY, currencyFractionDigits, impliedRate, isSupportedCurrency } from "./lib/currency.js";
 
 const loadExcelJS = async () => {
   const module = process.env.NODE_ENV === "test"
@@ -18,6 +19,11 @@ export async function buildExportWorkbook({ transactions, categories, users, rec
     date: t.date,
     type: t.type,
     amount: centsToDollars(t.amount),
+    currency: t.currency || "",
+    foreignAmount: t.currency && Number.isSafeInteger(t.foreignAmount)
+      ? t.foreignAmount / 10 ** currencyFractionDigits(t.currency)
+      : "",
+    exchangeRate: t.currency && Number.isFinite(t.exchangeRate) ? t.exchangeRate : "",
     categoryName: categoriesById[t.categoryId]?.name || "",
     categoryId: t.categoryId,
     description: t.description || "",
@@ -82,7 +88,7 @@ export async function exportToXlsx(payload) {
   URL.revokeObjectURL(url);
 }
 
-export async function importFromXlsx(file, { categories, users }) {
+export async function importFromXlsx(file, { categories, users, currency = DEFAULT_CURRENCY }) {
   const ExcelJS = await loadExcelJS();
   const buf = await file.arrayBuffer();
   const wb = new ExcelJS.Workbook();
@@ -137,7 +143,7 @@ export async function importFromXlsx(file, { categories, users }) {
     if (!addedBy || !userById.has(addedBy)) { skipped++; return; }
 
     if (imported.rounded) rounded++;
-    added.push({
+    const transaction = {
       id: r.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "id-" + Math.random().toString(36).slice(2, 10)),
       date: String(date),
       amount,
@@ -148,7 +154,25 @@ export async function importFromXlsx(file, { categories, users }) {
       recurringId: null,
       addedBy,
       createdAt: r.createdAt || new Date().toISOString(),
-    });
+    };
+    // Foreign columns are an XLSX round-trip only. CSV and JSON imports stay
+    // main-currency, and an invalid/unknown foreign triple falls back to a
+    // normal main-currency row rather than losing the amount.
+    const foreignCurrency = typeof r.currency === "string" ? r.currency.trim().toUpperCase() : "";
+    if (foreignCurrency && foreignCurrency !== currency && isSupportedCurrency(foreignCurrency)) {
+      const digits = currencyFractionDigits(foreignCurrency);
+      const rawForeign = Number(r.foreignAmount);
+      const foreignAmount = Number.isFinite(rawForeign) && rawForeign > 0 ? Math.round(rawForeign * 10 ** digits) : 0;
+      if (Number.isSafeInteger(foreignAmount) && foreignAmount > 0) {
+        const rawRate = Number(r.exchangeRate);
+        transaction.currency = foreignCurrency;
+        transaction.foreignAmount = foreignAmount;
+        transaction.exchangeRate = Number.isFinite(rawRate) && rawRate > 0
+          ? rawRate
+          : impliedRate(foreignAmount, amount, foreignCurrency);
+      }
+    }
+    added.push(transaction);
   });
 
   return { added, skipped, rounded };

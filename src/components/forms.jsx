@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { PALETTE, SAVINGS_CAT } from "../lib/constants.js";
-import { centsToInput, fmtAUD, parseAUDToCents, todayISO } from "../lib/utils.js";
+import { centsToInput, fmtMoney, parseAUDToCents, todayISO } from "../lib/utils.js";
+import { CURRENCIES, currencyFractionDigits, currencyName, getActiveCurrency, impliedRate, minorToInput, parseAmountToMinor } from "../lib/currency.js";
 import { descriptionSuggestions } from "../lib/descriptionSuggestions.js";
 
 const inputCents = (value, options) => {
@@ -20,9 +21,16 @@ export function TxForm({ tx, categories, transactionHistory = [], activeUserId, 
   // income logged through the Add Income flow never has one, so trusting it
   // opened this form on "— unallocated —" and saving drained the envelope.
   const existingAllocations = tx?.type === "income" && Array.isArray(tx.allocations) ? tx.allocations : [];
+  const mainCurrency = getActiveCurrency();
   const [form, setForm] = useState(
     tx
-      ? { ...tx, amount: centsToInput(tx.amount), allocatedEnvelopeId: existingAllocations.length === 1 ? existingAllocations[0].catId : "" }
+      ? {
+          ...tx,
+          currency: tx.currency || mainCurrency,
+          amount: tx.currency ? minorToInput(tx.foreignAmount, tx.currency) : centsToInput(tx.amount),
+          chargedAmount: tx.currency ? centsToInput(tx.amount) : "",
+          allocatedEnvelopeId: existingAllocations.length === 1 ? existingAllocations[0].catId : "",
+        }
       : {
         date: todayISO(),
         amount: "",
@@ -30,6 +38,8 @@ export function TxForm({ tx, categories, transactionHistory = [], activeUserId, 
         categoryId: defaultCategoryId || categories.find((c) => c.type === (defaultType || "expense"))?.id || "",
         description: "",
         addedBy: activeUserId,
+        currency: mainCurrency,
+        chargedAmount: "",
         fromCatId: "",
         toCatId: "",
         allocatedEnvelopeId: "",
@@ -53,48 +63,127 @@ export function TxForm({ tx, categories, transactionHistory = [], activeUserId, 
   const parsedFormAmount = inputCents(form.amount) || 0;
   const splitOverAmount = !!splitAllocations &&
     splitAllocations.reduce((s, a) => s + a.amount, 0) > parsedFormAmount;
+  const isTransfer = form.type === "transfer";
+  const isIncome = form.type === "income";
+  const isExpense = form.type === "expense";
+  const foreignMode = isExpense && !!form.currency && form.currency !== mainCurrency;
+  const foreignDigits = foreignMode ? currencyFractionDigits(form.currency) : 2;
+  const foreignStep = foreignDigits === 0 ? "1" : foreignDigits === 3 ? "0.001" : "0.01";
+  const parsedForeignAmount = (() => {
+    if (!foreignMode) return 0;
+    try { return parseAmountToMinor(form.amount, form.currency); } catch { return 0; }
+  })();
+  const parsedChargedAmount = inputCents(form.chargedAmount) || 0;
+  const derivedRate = foreignMode && parsedForeignAmount > 0 && parsedChargedAmount > 0
+    ? impliedRate(parsedForeignAmount, parsedChargedAmount, form.currency)
+    : null;
   const submit = (e) => {
     e.preventDefault();
+    if (foreignMode) {
+      const foreignAmount = parsedForeignAmount;
+      const chargedAmount = parsedChargedAmount;
+      if (!foreignAmount || foreignAmount <= 0 || !chargedAmount || chargedAmount <= 0) return;
+      const { chargedAmount: _charged, ...rest } = form;
+      onSave({
+        ...rest,
+        amount: chargedAmount,
+        currency: form.currency,
+        foreignAmount,
+        exchangeRate: impliedRate(foreignAmount, chargedAmount, form.currency),
+        addedBy: activeUserId,
+      });
+      return;
+    }
     const amount = inputCents(form.amount);
     if (!amount || amount <= 0) return;
-    if (form.type === "transfer") {
+    if (isTransfer) {
       if (!form.fromCatId || !form.toCatId || form.fromCatId === form.toCatId) return;
       onTransfer?.({ fromId: form.fromCatId, toId: form.toCatId, amount, description: form.description || "" });
       return;
     }
-    onSave({ ...form, amount, addedBy: activeUserId });
+    const { chargedAmount: _charged, currency: _currency, foreignAmount: _foreignAmount, exchangeRate: _exchangeRate, ...rest } = form;
+    onSave({ ...rest, amount, addedBy: activeUserId });
   };
   const catOptions = categories.filter((c) => c.type === form.type);
   const mobile = styles.isMobile;
-  const isTransfer = form.type === "transfer";
-  const isIncome = form.type === "income";
-  const cols = mobile ? "1fr 1fr" : (isIncome && !isTransfer) ? "repeat(6, 1fr)" : "repeat(5, 1fr)";
+  const cols = mobile ? "1fr 1fr" : "repeat(6, 1fr)";
   return (
     <form className="byb-panel" onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: cols, gap: 10, ...style }} data-testid="tx-form">
       <div style={mobile ? { gridColumn: "span 2" } : {}}><div style={styles.label}>Date</div><input style={styles.input} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
       <div>
         <div style={styles.label}>Type</div>
-        <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, categoryId: categories.find((c) => c.type === e.target.value)?.id || "", fromCatId: "", toCatId: "", allocatedEnvelopeId: "", allocations: [] })}>
+        <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, categoryId: categories.find((c) => c.type === e.target.value)?.id || "", fromCatId: "", toCatId: "", allocatedEnvelopeId: "", allocations: [], currency: e.target.value === "expense" ? mainCurrency : "", chargedAmount: "", foreignAmount: undefined, exchangeRate: undefined })}>
           <option value="expense">Expense</option>
           <option value="income">Income</option>
           <option value="transfer">Transfer</option>
         </select>
       </div>
-      <div><div style={styles.label}>Amount</div><input style={styles.input} type="number" step="0.01" min="0" inputMode="decimal" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required data-testid="tx-amount" /></div>
+      {isExpense && (
+        <div>
+          <div style={styles.label}>Currency</div>
+          <select
+            style={styles.input}
+            value={form.currency || mainCurrency}
+            onChange={(e) => {
+              const nextCurrency = e.target.value;
+              setForm({
+                ...form,
+                currency: nextCurrency,
+                amount: nextCurrency === mainCurrency ? (form.chargedAmount || form.amount) : "",
+                chargedAmount: "",
+                foreignAmount: undefined,
+                exchangeRate: undefined,
+              });
+            }}
+            data-testid="tx-currency"
+            aria-label="Expense currency"
+          >
+            {CURRENCIES.map((code) => <option key={code} value={code}>{code} — {currencyName(code)}</option>)}
+          </select>
+        </div>
+      )}
+      <div>
+        <div style={styles.label}>{foreignMode ? `Amount (${form.currency})` : "Amount"}</div>
+        <input style={styles.input} type="number" step={foreignStep} min="0" inputMode="decimal" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required data-testid="tx-amount" />
+      </div>
+      {foreignMode && (
+        <>
+          <div>
+            <div style={styles.label}>Charged ({mainCurrency})</div>
+            <input
+              style={styles.input}
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              value={form.chargedAmount || ""}
+              onChange={(e) => setForm({ ...form, chargedAmount: e.target.value })}
+              required
+              data-testid="tx-charged"
+            />
+          </div>
+          <div>
+            <div style={styles.label}>Implied rate</div>
+            <div style={{ ...styles.input, height: "auto", display: "flex", alignItems: "center", fontSize: 13 }} data-testid="tx-rate">
+              {derivedRate === null ? "—" : `1 ${form.currency} = ${derivedRate} ${mainCurrency}`}
+            </div>
+          </div>
+        </>
+      )}
       {isTransfer ? (
         <>
           <div>
             <div style={styles.label}>From envelope</div>
             <select style={styles.input} value={form.fromCatId} onChange={(e) => setForm({ ...form, fromCatId: e.target.value })} data-testid="tx-from">
               <option value="">Select envelope…</option>
-              {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+              {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtMoney(c.envelopeBalance || 0)})</option>)}
             </select>
           </div>
           <div>
             <div style={styles.label}>To envelope</div>
             <select style={styles.input} value={form.toCatId} onChange={(e) => setForm({ ...form, toCatId: e.target.value })} data-testid="tx-to">
               <option value="">Select envelope…</option>
-              {expenseCats.filter((c) => c.id !== form.fromCatId).map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+              {expenseCats.filter((c) => c.id !== form.fromCatId).map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtMoney(c.envelopeBalance || 0)})</option>)}
             </select>
           </div>
         </>
@@ -103,7 +192,7 @@ export function TxForm({ tx, categories, transactionHistory = [], activeUserId, 
           <div style={mobile ? { gridColumn: "span 2" } : {}}>
             <div style={styles.label}>Category</div>
             <select style={styles.input} value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} data-testid="tx-category">
-              {catOptions.map((c) => <option key={c.id} value={c.id}>{c.name}{c.type === "expense" ? ` — ${fmtAUD(c.envelopeBalance || 0)}` : ""}</option>)}
+              {catOptions.map((c) => <option key={c.id} value={c.id}>{c.name}{c.type === "expense" ? ` — ${fmtMoney(c.envelopeBalance || 0)}` : ""}</option>)}
             </select>
           </div>
           {isIncome && (
@@ -112,18 +201,18 @@ export function TxForm({ tx, categories, transactionHistory = [], activeUserId, 
               {splitAllocations ? (
                 <div style={{ ...styles.input, height: "auto", display: "flex", flexDirection: "column", gap: 2, fontSize: 12 }} data-testid="tx-allocate-split">
                   {splitAllocations.map((a, i) => (
-                    <span key={i}>{categories.find((c) => c.id === a.catId)?.name || "?"} — {fmtAUD(a.amount)}</span>
+                    <span key={i}>{categories.find((c) => c.id === a.catId)?.name || "?"} — {fmtMoney(a.amount)}</span>
                   ))}
                   <span style={{ color: splitOverAmount ? "var(--byb-over)" : styles.textMuted, fontSize: 11 }}>
                     {splitOverAmount
-                      ? `Split exceeds the amount — it will be scaled down to ${fmtAUD(parsedFormAmount)}`
+                      ? `Split exceeds the amount — it will be scaled down to ${fmtMoney(parsedFormAmount)}`
                       : "Split kept as is · change it in Add Income"}
                   </span>
                 </div>
               ) : (
                 <select style={styles.input} value={form.allocatedEnvelopeId || ""} onChange={(e) => setForm({ ...form, allocatedEnvelopeId: e.target.value, allocations: [] })} data-testid="tx-allocate-envelope">
                   <option value="">— unallocated —</option>
-                  {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+                  {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtMoney(c.envelopeBalance || 0)})</option>)}
                 </select>
               )}
             </div>
@@ -168,7 +257,7 @@ export function TxForm({ tx, categories, transactionHistory = [], activeUserId, 
           </div>
         )}
       </div>
-      <div style={{ gridColumn: mobile ? "span 2" : `span ${isIncome ? 6 : 5}`, display: "flex", alignItems: "end", gap: 8 }}>
+      <div style={{ gridColumn: mobile ? "span 2" : "span 6", display: "flex", alignItems: "end", gap: 8 }}>
         <button type="submit" style={{ ...styles.button, flex: mobile ? 1 : "none" }} data-testid="tx-save">Save</button>
         <button type="button" style={{ ...styles.buttonGhost, flex: mobile ? 1 : "none" }} onClick={onCancel}>Cancel</button>
       </div>
@@ -192,13 +281,13 @@ export function AddAmountForm({ categories, onSave, onCancel, styles }) {
     <form className="byb-panel" onSubmit={submit} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
       style={{ ...styles.card, marginBottom: 16, display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "1fr 1fr 2fr auto auto", gap: 10, borderColor: PALETTE.primary, background: "var(--byb-primary-tint)" }}>
       <div>
-        <div style={styles.label}>Amount ($)</div>
+        <div style={styles.label}>Amount ({getActiveCurrency()})</div>
         <input style={styles.input} type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} required />
       </div>
       <div>
         <div style={styles.label}>Envelope</div>
         <select style={styles.input} value={catId} onChange={(e) => setCatId(e.target.value)} required>
-          {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtAUD(c.envelopeBalance || 0)})</option>)}
+          {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name} ({fmtMoney(c.envelopeBalance || 0)})</option>)}
         </select>
       </div>
       <div style={mobile ? { gridColumn: "span 2" } : {}}>

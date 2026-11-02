@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { centsToInput, fmtAUD, parseAUDToCents, todayISO } from "../lib/utils.js";
+import { centsToInput, fmtMoney, parseAUDToCents, todayISO } from "../lib/utils.js";
+import { getActiveCurrency } from "../lib/currency.js";
 import { envelopeTarget } from "../lib/targets.js";
 import { CatForm } from "../components/forms.jsx";
 import { FirstTimeFillWizard } from "../components/FirstTimeFillWizard.jsx";
@@ -63,13 +64,13 @@ function EnvelopeCard({ c, styles, editingCat, dragId, dragOverId, dragHandlers,
           <AnimatedCurrency value={balance} />
         </span>
         <span style={{ fontSize: "var(--byb-text-sm)", color: styles.textMuted, fontVariantNumeric: "tabular-nums" }}>
-          / {fmtAUD(base)}
+          / {fmtMoney(base)}
         </span>
       </div>
       <div
         className="byb-meter"
         role="img"
-        aria-label={`${STATUS_LABEL[status]} — ${fmtAUD(balance)} of ${fmtAUD(base)}`}
+        aria-label={`${STATUS_LABEL[status]} — ${fmtMoney(balance)} of ${fmtMoney(base)}`}
         data-testid={`env-meter-${c.id}`}
       >
         <div className="byb-meter-fill" data-testid={`env-meter-fill-${c.id}`} style={{ width: `${filled * 100}%`, background: balColour }} />
@@ -81,19 +82,19 @@ function EnvelopeCard({ c, styles, editingCat, dragId, dragOverId, dragHandlers,
         >
           {STATUS_LABEL[status]}
         </span>
-        <span>{base > 0 ? `${Math.round(filled * 100)}% of ${fmtAUD(base)}/mo` : "No monthly amount set"}{c.isAccumulating ? " · accumulating" : ""}</span>
+        <span>{base > 0 ? `${Math.round(filled * 100)}% of ${fmtMoney(base)}/mo` : "No monthly amount set"}{c.isAccumulating ? " · accumulating" : ""}</span>
       </div>
       {target && (
         <div data-testid={`env-target-${c.id}`} style={{ background: "var(--byb-surface-sunken)", borderRadius: 6, padding: "8px 10px", marginBottom: 10, fontSize: 11 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
-            <strong>Target {fmtAUD(target.targetAmount)} by {target.targetDate}</strong>
+            <strong>Target {fmtMoney(target.targetAmount)} by {target.targetDate}</strong>
             <strong style={{ color: targetColour, whiteSpace: "nowrap" }}>{targetLabel}</strong>
           </div>
           <div className="byb-meter" style={{ height: 5, marginBottom: 5 }}>
             <div className="byb-meter-fill" style={{ width: `${Math.max(0, Math.min(100, (target.balance / target.targetAmount) * 100))}%`, background: targetColour }} />
           </div>
           <span style={{ color: styles.textMuted }}>
-            {target.remaining === 0 ? "Fully funded" : `${fmtAUD(target.remaining)} left · ${fmtAUD(target.requiredMonthly)}/month needed`}
+            {target.remaining === 0 ? "Fully funded" : `${fmtMoney(target.remaining)} left · ${fmtMoney(target.requiredMonthly)}/month needed`}
           </span>
         </div>
       )}
@@ -226,7 +227,7 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
         <div style={{ fontSize: mobile ? 28 : 34, fontWeight: 800, letterSpacing: -1, color: unallocatedBalance < 0 ? "var(--byb-over)" : "var(--byb-ok)", lineHeight: 1.1 }}>
           <AnimatedCurrency value={unallocatedBalance} />
         </div>
-        <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 4 }}>{fmtAUD(totalBalance)} in envelopes · {fmtAUD(totalBase)}/mo base</div>
+        <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 4 }}>{fmtMoney(totalBalance)} in envelopes · {fmtMoney(totalBase)}/mo base</div>
       </div>
 
       {/* Two primary action buttons */}
@@ -290,13 +291,13 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
                         style={{ ...styles.buttonGhost, fontSize: 12, padding: "7px 12px", borderColor: PALETTE.primary, color: PALETTE.primaryDeep }}
                         onClick={() => setFillAmounts((prev) => ({ ...prev, [c.id]: centsToInput(recurringAmt) }))}
                       >
-                        Stay Consistent ({fmtAUD(recurringAmt)})
+                        Stay Consistent ({fmtMoney(recurringAmt)})
                       </button>
                     </div>
                   )}
                   <div style={{ flex: 1, minWidth: 140 }}>
                     <div style={{ fontSize: 10, fontWeight: 600, color: styles.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
-                      {recurringAmt != null ? "Custom amount" : "Amount received ($)"}
+                      {recurringAmt != null ? "Custom amount" : `Amount received (${getActiveCurrency()})`}
                     </div>
                     <input
                       style={styles.input}
@@ -322,7 +323,7 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
               onClick={applyAllIncomeFill}
               disabled={totalFillAmount <= 0}
             >
-              Fill All Envelopes — {fmtAUD(totalFillAmount)}
+              Fill All Envelopes — {fmtMoney(totalFillAmount)}
             </button>
             <button style={{ ...styles.buttonGhost }} onClick={() => { setFillPanelOpen(false); setFillAmounts({}); }}>Cancel</button>
           </div>
@@ -390,7 +391,7 @@ export function EnvelopesView({ categories, editingCat, setEditingCat, catFormOp
           actions={[
             ...((quickCat.baseAmount || 0) > 0 && onFillSingleEnvelope ? [{
               label: "Fill to target",
-              sub: `Top up to ${fmtAUD(quickCat.baseAmount || 0)} from Unallocated`,
+              sub: `Top up to ${fmtMoney(quickCat.baseAmount || 0)} from Unallocated`,
               icon: IconZap,
               onSelect: () => onFillSingleEnvelope(quickCat.id),
             }] : []),

@@ -8,6 +8,9 @@ const NON_MONEY_NUMERIC_PATHS = new Set([
   "categories[].sortOrder",
   "recurring[].dueDay",
   "reconcileLog[].toppedUp",
+  "transactions[].foreignAmount",
+  "transactions[].exchangeRate",
+  "currencyHistory[].rate",
 ]);
 
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -54,6 +57,17 @@ function walkMoney(document, visit) {
     }
     fields(entry.unallocated, ["before", "after"], "openingBalances[].unallocated");
   }
+}
+
+/**
+ * Visit every main-currency money field in a document.
+ *
+ * Exported so the currency converter works from exactly the same list as the
+ * dollars-to-cents migration: a path missing here would silently keep its old
+ * currency when the household changes currency.
+ */
+export function forEachMoneyPath(document, visit) {
+  walkMoney(document, visit);
 }
 
 function numericPaths(value) {

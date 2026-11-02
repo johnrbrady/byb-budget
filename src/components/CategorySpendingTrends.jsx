@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { fmtAUD, formatMonth, todayISO } from "../lib/utils.js";
+import { fmtMoney, formatMonth, todayISO } from "../lib/utils.js";
 import { categorySpendingReport } from "../lib/reporting.js";
 import { MonthlyBarChart } from "./MonthlyBarChart.jsx";
 
@@ -11,19 +11,19 @@ function Comparison({ report, styles }) {
   if (report.direction !== "steady") {
     const verb = report.direction === "up" ? "Up" : "Down";
     const percent = report.percentChange == null ? "" : ` (${Math.abs(report.percentChange).toFixed(0)}%)`;
-    summary = `${verb} ${fmtAUD(change)}${percent} from last month`;
+    summary = `${verb} ${fmtMoney(change)}${percent} from last month`;
   }
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: styles.isMobile ? "1fr 1fr" : "repeat(3, minmax(0, 1fr))", gap: 8, margin: "12px 0 4px" }}>
       <div>
         <div style={styles.kpiLabel}>{formatMonth(latest)}</div>
-        <div style={{ fontWeight: 750, fontVariantNumeric: "tabular-nums" }}>{fmtAUD(report.current)}</div>
+        <div style={{ fontWeight: 750, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(report.current)}</div>
       </div>
       {prior && (
         <div>
           <div style={styles.kpiLabel}>{formatMonth(prior)}</div>
-          <div style={{ fontWeight: 650, fontVariantNumeric: "tabular-nums", color: styles.textMuted }}>{fmtAUD(report.previous)}</div>
+          <div style={{ fontWeight: 650, fontVariantNumeric: "tabular-nums", color: styles.textMuted }}>{fmtMoney(report.previous)}</div>
         </div>
       )}
       <div style={{ gridColumn: styles.isMobile ? "1 / -1" : "auto" }}>
@@ -47,7 +47,7 @@ function CategorySection({ report, onNavigateToCategory, styles }) {
         <div style={{ minWidth: 0 }}>
           <div id={`${id}-title`} style={{ fontSize: 17, fontWeight: 750, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={styles.pill(report.category.colour || "#999")}>{report.category.name}</span>
-            <span style={{ fontSize: 12, color: styles.textMuted, fontWeight: 500 }}>{fmtAUD(report.total)} in this period</span>
+            <span style={{ fontSize: 12, color: styles.textMuted, fontWeight: 500 }}>{fmtMoney(report.total)} in this period</span>
           </div>
         </div>
         {!report.category.deleted && onNavigateToCategory && (

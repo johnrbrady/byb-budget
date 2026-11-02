@@ -8,6 +8,7 @@ import {
   reconcileEntryToDollars,
   toCentsDocument,
   toDollarsDocument,
+  unexpectedNumericPaths,
 } from "../money-schema.js";
 
 const legacy = () => ({
@@ -89,4 +90,29 @@ test("external reconcile payloads remain dollar-valued including movements", () 
     toppedUp: 2,
     movements: [{ before: -1, amount: 0.5, after: -0.5 }],
   });
+});
+
+test("currency settings, history and foreign transaction fields are accepted numerics", () => {
+  const cents = {
+    ...toCentsDocument(legacy()),
+    settings: { currency: "USD" },
+    currencyHistory: [{ id: "h1", date: "2026-01-01", from: "AUD", to: "USD", rate: 0.65 }],
+    transactions: [{ amount: 12000, currency: "EUR", foreignAmount: 7500, exchangeRate: 1.6 }],
+  };
+  expect(unexpectedNumericPaths(cents)).toEqual([]);
+  expect(toCentsDocument(cents)).toEqual(cents);
+});
+
+test("the dollars-to-cents migration leaves foreign amounts alone", () => {
+  const input = {
+    ...legacy(),
+    settings: { currency: "USD" },
+    currencyHistory: [{ id: "h1", from: "AUD", to: "USD", rate: 0.65 }],
+    transactions: [{ amount: 120, currency: "EUR", foreignAmount: 7500, exchangeRate: 1.6 }],
+  };
+  const cents = toCentsDocument(input);
+  expect(cents.transactions[0]).toMatchObject({ amount: 12000, currency: "EUR", foreignAmount: 7500, exchangeRate: 1.6 });
+  expect(cents.currencyHistory[0].rate).toBe(0.65);
+  expect(toDollarsDocument(cents).transactions[0]).toMatchObject({ amount: 120, foreignAmount: 7500, exchangeRate: 1.6 });
+  expect(toDollarsDocument(cents).currencyHistory[0].rate).toBe(0.65);
 });

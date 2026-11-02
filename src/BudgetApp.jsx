@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { DEFAULT_USERS, DEFAULT_CATEGORIES, INCIDENTALS_CAT, SAVINGS_CAT, VIEW_ORDER } from "./lib/constants.js";
-import { uid, fmtAUD, monthKey, todayISO, dayOfMonth, genMonthRange } from "./lib/utils.js";
+import { uid, fmtMoney, monthKey, todayISO, dayOfMonth, genMonthRange } from "./lib/utils.js";
+import { DEFAULT_CURRENCY, convertCurrencyDocument, isSupportedCurrency, parseRateToRational, setActiveCurrency } from "./lib/currency.js";
 import { MONEY_SCALE, parseImportedAUDToCents, reconcileEntryToDollars, toCentsDocument, toDollarsDocument } from "../money-schema.js";
 import { applyTxEffect, saveTransactionEffect, envelopeFillPlan, applyEnvelopeFill, removeEnvelope, reconcileLedger, applyOpeningBalances, applyResetBalances, applySetUnallocated, householdTotal } from "./lib/money.js";
 import { buildStyles } from "./styles/buildStyles.js";
@@ -51,6 +52,10 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const initRecurring = sourceData?.recurring?.length ? sourceData.recurring : [];
   const initTransactions = sourceData?.transactions?.length ? sourceData.transactions : [];
   const initUnallocated = sourceData?.unallocatedBalance || 0;
+  const initSettings = sourceData?.settings && typeof sourceData.settings === "object" && !Array.isArray(sourceData.settings)
+    ? { currency: DEFAULT_CURRENCY, ...sourceData.settings }
+    : { currency: DEFAULT_CURRENCY };
+  const initCurrencyHistory = Array.isArray(sourceData?.currencyHistory) ? sourceData.currencyHistory : [];
 
   // ALL hooks must come before any conditional return
   const [authToken, setAuthToken] = useState(() => localStorage.getItem("byb_token") || "");
@@ -99,7 +104,13 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const [view, setView] = useState("dashboard");
   const [viewAnim, setViewAnim] = useState(""); // "", "left", "right"
   const [theme, setTheme] = useState(() => localStorage.getItem("byb_theme") || "light");
+  const [settings, setSettings] = useState(initSettings);
+  const [currencyHistory, setCurrencyHistory] = useState(initCurrencyHistory);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Formatters read the active currency at render time. This has to happen in
+  // the render body, not an effect, so children see the new symbol immediately.
+  setActiveCurrency(settings.currency);
 
   // Welcome modal — the flag lives on the user record server-side and follows
   // the account across devices. localStorage is kept as an offline fallback
@@ -262,10 +273,97 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
 
   const persist = (patch) => {
     const nextCategories = patch.categories || categories;
-    const nextBudgetHistory = captureBudgetMonth(budgetHistory, nextCategories, todayISO().slice(0, 7));
-    setBudgetHistory(nextBudgetHistory);
-    const document = { transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments, budgetHistory: nextBudgetHistory, ...patch, moneyScale: MONEY_SCALE };
+    const nextBudgetHistory = patch.budgetHistory || captureBudgetMonth(budgetHistory, nextCategories, todayISO().slice(0, 7));
+    const document = {
+      transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments,
+      budgetHistory: nextBudgetHistory, settings, currencyHistory, ...patch, moneyScale: MONEY_SCALE,
+    };
+    setBudgetHistory(document.budgetHistory);
     onSave?.(legacyInput ? toDollarsDocument(document) : document);
+  };
+
+  // Build the whole document from the current render's state.
+  //
+  // A currency change cannot be a `setSettings` followed by `persist({})`: the
+  // latter would still close over the old settings. This helper gives both
+  // paths the same complete snapshot.
+  const currentDocument = (patch = {}) => {
+    const nextCategories = patch.categories || categories;
+    const nextBudgetHistory = patch.budgetHistory || captureBudgetMonth(budgetHistory, nextCategories, todayISO().slice(0, 7));
+    return {
+      transactions, categories, recurring, users, unallocatedBalance, assets, transfers, reconcileLog, adjustments,
+      budgetHistory: nextBudgetHistory, settings, currencyHistory, ...patch, moneyScale: MONEY_SCALE,
+    };
+  };
+
+  // Apply a whole document to every state slice and save it in one go. Used by
+  // the currency change and the first-run currency picker, where several slices
+  // change together and the save must not depend on React having flushed.
+  const commitWholeDocument = (document) => {
+    if (!document) return;
+    setTransactions(document.transactions || []);
+    setCategories(document.categories || []);
+    setRecurring(document.recurring || []);
+    setUnallocatedBalance(document.unallocatedBalance || 0);
+    setAssets(document.assets || []);
+    setTransfers(document.transfers || []);
+    setReconcileLog(document.reconcileLog || []);
+    setAdjustments(document.adjustments || []);
+    setBudgetHistory(document.budgetHistory || []);
+    setSettings(document.settings || { currency: DEFAULT_CURRENCY });
+    setCurrencyHistory(document.currencyHistory || []);
+    setActiveCurrency((document.settings || {}).currency || DEFAULT_CURRENCY);
+    onSave?.(legacyInput ? toDollarsDocument(document) : document);
+  };
+
+  const changeMainCurrency = async (newCode, rateText) => {
+    const current = settings.currency;
+    if (!isSupportedCurrency(newCode)) { showToast("Choose a supported currency"); return false; }
+    if (newCode === current) { showToast(`Household currency is already ${current}`); return false; }
+    let rational;
+    try {
+      rational = parseRateToRational(rateText);
+    } catch {
+      showToast("Enter a rate greater than zero with at most 8 decimal places");
+      return false;
+    }
+
+    const source = currentDocument();
+    let converted;
+    try {
+      converted = convertCurrencyDocument(source, { from: current, to: newCode, rate: rational });
+    } catch (error) {
+      showToast(`Could not convert currency: ${error.message}`);
+      return false;
+    }
+
+    const before = householdTotal({ categories, unallocatedBalance });
+    const after = householdTotal({ categories: converted.categories, unallocatedBalance: converted.unallocatedBalance });
+    const confirmed = await askConfirm({
+      title: `Change household currency from ${current} to ${newCode}?`,
+      message: `Every balance, budget, transaction, asset, recurring rule, transfer, budget history entry and audit log will be converted at 1 ${current} = ${rateText} ${newCode}.\n\nThe household total goes from ${fmtMoney(before)} to ${fmtMoney(after, newCode)}. This rewrites stored history and cannot be undone.`,
+      confirmLabel: `Change to ${newCode}`,
+      danger: true,
+    });
+    if (!confirmed) return false;
+
+    const entry = {
+      id: uid(),
+      date: todayISO(),
+      at: new Date().toISOString(),
+      userId: activeUserId,
+      from: current,
+      to: newCode,
+      rate: Number(rateText),
+    };
+    const history = [entry, ...currencyHistory].slice(0, 20);
+    converted.settings = { ...(converted.settings || {}), currency: newCode };
+    converted.currencyHistory = history;
+    converted.budgetHistory = captureBudgetMonth(converted.budgetHistory || [], converted.categories, todayISO().slice(0, 7));
+    converted.moneyScale = MONEY_SCALE;
+    commitWholeDocument(converted);
+    showToast(`Household currency is now ${newCode}`);
+    return true;
   };
 
   // The envelope arithmetic itself lives in lib/money.js. This component holds
@@ -369,9 +467,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     commitLedger(next, { transactions: newTx });
 
     const allocated = allocations.reduce((s, a) => s + a.amount, 0);
-    if (allocationMode === "fill") showToast(`${fmtAUD(amount)} logged · ${fmtAUD(allocated)} into envelopes`);
-    else if (allocationMode === "split") showToast(`${fmtAUD(amount)} logged · ${allocations.length} envelope${allocations.length === 1 ? "" : "s"} topped up`);
-    else showToast(`${fmtAUD(amount)} added to Unallocated`);
+    if (allocationMode === "fill") showToast(`${fmtMoney(amount)} logged · ${fmtMoney(allocated)} into envelopes`);
+    else if (allocationMode === "split") showToast(`${fmtMoney(amount)} logged · ${allocations.length} envelope${allocations.length === 1 ? "" : "s"} topped up`);
+    else showToast(`${fmtMoney(amount)} added to Unallocated`);
   };
 
   // Envelope actions — move money from unallocated into envelopes.
@@ -386,13 +484,13 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     if (shortfall > 0) {
       const ok = await askConfirm({
         title: "Top up from Unallocated?",
-        message: `Filling ${cat.name} needs ${fmtAUD(amount)} but only ${fmtAUD(unallocatedBalance)} is unallocated. This will leave Unallocated at ${fmtAUD(unallocatedBalance - amount)}.`,
+        message: `Filling ${cat.name} needs ${fmtMoney(amount)} but only ${fmtMoney(unallocatedBalance)} is unallocated. This will leave Unallocated at ${fmtMoney(unallocatedBalance - amount)}.`,
         confirmLabel: "Fill envelope",
       });
       if (!ok) return;
     }
     commitLedger(applyEnvelopeFill(ledger(), catId, amount));
-    showToast(`Filled ${cat.name} with ${fmtAUD(amount)}`);
+    showToast(`Filled ${cat.name} with ${fmtMoney(amount)}`);
   };
 
   // A manual transfer moves money the user has already decided about, so it does
@@ -406,7 +504,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     if (amount > available) {
       const ok = await askConfirm({
         title: "Transfer more than the envelope holds?",
-        message: `${from?.name || "That envelope"} holds ${fmtAUD(available)} but this transfer moves ${fmtAUD(amount)}. This will leave it at ${fmtAUD(available - amount)}.`,
+        message: `${from?.name || "That envelope"} holds ${fmtMoney(available)} but this transfer moves ${fmtMoney(amount)}. This will leave it at ${fmtMoney(available - amount)}.`,
         confirmLabel: "Transfer anyway",
       });
       if (!ok) return false;
@@ -421,7 +519,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     setCategories(newCats);
     setTransfers(newTransfers);
     persist({ categories: newCats, transfers: newTransfers });
-    showToast(`Transferred ${fmtAUD(amount)}`);
+    showToast(`Transferred ${fmtMoney(amount)}`);
     return true;
   };
 
@@ -443,7 +541,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     if (netDraw > 0) {
       const ok = await askConfirm({
         title: "Top up from Unallocated?",
-        message: `Filling all envelopes will draw ${fmtAUD(netDraw)} from your existing unallocated balance (${fmtAUD(unallocatedBalance)} available).`,
+        message: `Filling all envelopes will draw ${fmtMoney(netDraw)} from your existing unallocated balance (${fmtMoney(unallocatedBalance)} available).`,
         confirmLabel: "Fill envelopes",
       });
       if (!ok) return;
@@ -471,7 +569,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     const newTx = [...newIncomeTxs, ...transactions];
     setTransactions(newTx);
     commitLedger({ categories: newCats, unallocatedBalance: newUnalloc }, { transactions: newTx });
-    showToast(`${fmtAUD(totalIncome)} income logged · envelopes filled`);
+    showToast(`${fmtMoney(totalIncome)} income logged · envelopes filled`);
   };
 
   // First-time wizard: bulk set base amounts, then ask whether the household
@@ -520,15 +618,15 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
 
     const fund = await askConfirm({
       title: "Do you already have this money?",
-      message: `Your envelopes add up to ${fmtAUD(opening.amount)}.\n\nIf that money is already in your account, BYB! can open them holding it. It is recorded as an opening balance dated today, so your totals still add up and you can see later where the money came from.\n\nIf it is not there yet, start the envelopes empty and fill them as income arrives.`,
-      confirmLabel: `Yes, open with ${fmtAUD(opening.amount)}`,
+      message: `Your envelopes add up to ${fmtMoney(opening.amount)}.\n\nIf that money is already in your account, BYB! can open them holding it. It is recorded as an opening balance dated today, so your totals still add up and you can see later where the money came from.\n\nIf it is not there yet, start the envelopes empty and fill them as income arrives.`,
+      confirmLabel: `Yes, open with ${fmtMoney(opening.amount)}`,
       cancelLabel: "Start empty",
     });
 
     if (!fund) { setUpOnly("Envelopes set up · balances start empty"); return; }
 
     recordAdjustment("opening", opening);
-    showToast(`Envelopes set up · ${fmtAUD(opening.amount)} opening balance recorded`);
+    showToast(`Envelopes set up · ${fmtMoney(opening.amount)} opening balance recorded`);
   };
 
   // End-of-month reconcile: pool non-savings surpluses, cover deficits,
@@ -571,9 +669,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       body: JSON.stringify(reconcileEntryToDollars(entry)),
     }).catch(() => {});
 
-    let msg = `${fmtAUD(totalPooled)} redistributed`;
+    let msg = `${fmtMoney(totalPooled)} redistributed`;
     if (toppedUp > 0) msg += ` · ${toppedUp} envelope${toppedUp !== 1 ? "s" : ""} topped up`;
-    if (returned > 0) msg += ` · ${fmtAUD(returned)} returned to unallocated`;
+    if (returned > 0) msg += ` · ${fmtMoney(returned)} returned to unallocated`;
     showToast(msg);
   };
 
@@ -599,14 +697,14 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     const inEnvelopes = holding.reduce((s, c) => s + (c.envelopeBalance || 0), 0);
     const confirmed = await askConfirm({
       title: "Reset all balances to zero?",
-      message: `${holding.length} envelope${holding.length === 1 ? " holds" : "s hold"} ${fmtAUD(inEnvelopes)} and Unallocated holds ${fmtAUD(unallocatedBalance)} — ${fmtAUD(total)} in all. Every one of them is set to ${fmtAUD(0)}.\n\nYour transactions and history are not affected, and the reset is recorded in Reports. The balances themselves cannot be recovered. This cannot be undone.`,
+      message: `${holding.length} envelope${holding.length === 1 ? " holds" : "s hold"} ${fmtMoney(inEnvelopes)} and Unallocated holds ${fmtMoney(unallocatedBalance)} — ${fmtMoney(total)} in all. Every one of them is set to ${fmtMoney(0)}.\n\nYour transactions and history are not affected, and the reset is recorded in Reports. The balances themselves cannot be recovered. This cannot be undone.`,
       confirmLabel: "Reset balances",
       danger: true,
     });
     if (!confirmed) return false;
 
     const entry = recordAdjustment("reset", applyResetBalances(ledger()));
-    showToast(`All balances reset to zero · ${fmtAUD(-entry.amount)} cleared`);
+    showToast(`All balances reset to zero · ${fmtMoney(-entry.amount)} cleared`);
     return true;
   };
 
@@ -630,20 +728,20 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   // those, and it is a round number a household can hold in their head.
   const setUnallocatedManually = async (amount) => {
     const change = applySetUnallocated(ledger(), amount);
-    if (change.amount === 0) { showToast(`Unallocated is already ${fmtAUD(amount)}`); return; }
+    if (change.amount === 0) { showToast(`Unallocated is already ${fmtMoney(amount)}`); return; }
 
     if (Math.abs(change.amount) >= UNALLOCATED_CONFIRM_AT) {
       const direction = change.amount > 0 ? "add" : "remove";
       const confirmed = await askConfirm({
-        title: `Set Unallocated to ${fmtAUD(amount)}?`,
-        message: `Unallocated goes from ${fmtAUD(change.unallocated.before)} to ${fmtAUD(amount)}. That will ${direction} ${fmtAUD(Math.abs(change.amount))}, taking everything you hold from ${fmtAUD(change.before)} to ${fmtAUD(change.after)}.\n\nYour envelopes are not touched. The change is recorded in Reports.`,
+        title: `Set Unallocated to ${fmtMoney(amount)}?`,
+        message: `Unallocated goes from ${fmtMoney(change.unallocated.before)} to ${fmtMoney(amount)}. That will ${direction} ${fmtMoney(Math.abs(change.amount))}, taking everything you hold from ${fmtMoney(change.before)} to ${fmtMoney(change.after)}.\n\nYour envelopes are not touched. The change is recorded in Reports.`,
         confirmLabel: "Set balance",
       });
       if (!confirmed) return;
     }
 
     recordAdjustment("set-unallocated", change);
-    showToast(`Unallocated set to ${fmtAUD(amount)}`);
+    showToast(`Unallocated set to ${fmtMoney(amount)}`);
   };
 
   const saveCat = (cat) => {
@@ -674,9 +772,9 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
     // "returning" the balance means unallocated absorbs the shortfall.
     const balance = cat.envelopeBalance || 0;
     const moneyNote = balance > 0
-      ? `\n\nThe ${fmtAUD(balance)} in this envelope will be returned to Unallocated.`
+      ? `\n\nThe ${fmtMoney(balance)} in this envelope will be returned to Unallocated.`
       : balance < 0
-        ? `\n\nThis envelope is overdrawn by ${fmtAUD(-balance)}. That shortfall comes out of Unallocated, taking it to ${fmtAUD(unallocatedBalance + balance)}.`
+        ? `\n\nThis envelope is overdrawn by ${fmtMoney(-balance)}. That shortfall comes out of Unallocated, taking it to ${fmtMoney(unallocatedBalance + balance)}.`
         : "";
 
     const confirmed = await askConfirm({
@@ -899,7 +997,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
       showToast("Import handler not wired");
       return;
     }
-    Promise.resolve(onImport(file, { categories, users })).then((result) => {
+    Promise.resolve(onImport(file, { categories, users, currency: settings.currency })).then((result) => {
       if (result && Array.isArray(result.added)) {
         importTransactions(result.added, result);
       }
@@ -928,6 +1026,12 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
   const availableMonths = Array.from(new Set([...genMonthRange(rangeStart, oneAhead), ...transactions.map((t) => monthKey(t.date)), activeMonth])).sort().reverse();
   const dueCount = recurring.filter((r) => r.nextDueDate <= todayISO()).length;
   const activeUser = usersById[activeUserId];
+  const isAdmin = activeUser?.role === "owner" || activeUser?.role === "admin";
+  // The normalised `categories` state always contains defaults and protected
+  // envelopes, so a brand-new household can only be recognised from the raw
+  // payload the server returned.
+  const firstRun = !initialData?.categories?.length && !initialData?.transactions?.length;
+  const householdHeld = householdTotal({ categories, unallocatedBalance });
 
   return (
     <div style={styles.app}>
@@ -1062,7 +1166,7 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           </div>
         </div>
         <div style={styles.footer}>
-          <span>Running balance: <strong style={{ color: runningBalance >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }} data-testid="running-balance">{fmtAUD(runningBalance)}</strong></span>
+          <span>Running balance: <strong style={{ color: runningBalance >= 0 ? "var(--byb-ok)" : "var(--byb-over)" }} data-testid="running-balance">{fmtMoney(runningBalance)}</strong></span>
           <span style={{ fontSize: 11, color: styles.textMuted, textAlign: "center" }}>BYB! is for personal use only — not financial advice. Use at your own risk.</span>
           <span>Active: {activeUser?.name}{lastUpdated ? ` · last updated ${lastUpdated.slice(0, 10)}` : ""}</span>
         </div>
@@ -1073,10 +1177,14 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
           users={users}
           setUsers={setUsers}
           authToken={authToken}
-          isAdmin={activeUser?.role === "owner" || activeUser?.role === "admin"}
+          isAdmin={isAdmin}
           theme={theme}
           setTheme={updateTheme}
           activeUserId={activeUserId}
+          currency={settings.currency}
+          currencyHistory={currencyHistory}
+          householdTotal={householdHeld}
+          onChangeCurrency={changeMainCurrency}
           onShowWelcome={() => { setSettingsOpen(false); setWelcomeOpen(true); }}
           onResetBalances={resetAllBalances}
           onClose={() => setSettingsOpen(false)}
@@ -1100,7 +1208,16 @@ export default function BudgetApp({ onImport, onExport, onSave, onReload, initia
         />
       )}
       {welcomeOpen && !showNamePrompt && (
-        <WelcomeModal onClose={closeWelcome} styles={styles} />
+        <WelcomeModal
+          onClose={closeWelcome}
+          styles={styles}
+          currencyPicker={firstRun && isAdmin}
+          currency={settings.currency}
+          onSelectCurrency={(code) => {
+            if (!isSupportedCurrency(code) || code === settings.currency) return;
+            commitWholeDocument(currentDocument({ settings: { ...settings, currency: code } }));
+          }}
+        />
       )}
       <ConfirmHost styles={styles} />
       {toast && <div className="byb-toast" style={styles.toast} data-testid="toast">{toast}</div>}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { fmtAUD, formatMonth, monthKey } from "../lib/utils.js";
+import { fmtMoney, formatMonth, monthKey } from "../lib/utils.js";
+import { foreignDetail } from "../lib/currency.js";
 import { filterTransactions, totals, groupByMonth, normaliseRange } from "../lib/txQuery.js";
 import { TxForm } from "../components/forms.jsx";
 import { TxSheet } from "../components/TxSheet.jsx";
@@ -248,9 +249,9 @@ export function TransactionsView({
         {filteredTx.length} transaction{filteredTx.length === 1 ? "" : "s"}
       </span>
       <span>
-        <span style={{ color: "var(--byb-ok)", fontWeight: 600 }} data-testid="filter-income">+{fmtAUD(filteredIncome)}</span>
+        <span style={{ color: "var(--byb-ok)", fontWeight: 600 }} data-testid="filter-income">+{fmtMoney(filteredIncome)}</span>
         {" · "}
-        <span style={{ fontWeight: 600 }} data-testid="filter-expense">−{fmtAUD(filteredExpense)}</span>
+        <span style={{ fontWeight: 600 }} data-testid="filter-expense">−{fmtMoney(filteredExpense)}</span>
       </span>
     </div>
   );
@@ -265,7 +266,7 @@ export function TransactionsView({
         <div style={{ fontSize: 12, color: styles.textMuted, marginTop: 3 }}>{scopeLabel}</div>
       </div>
       <div style={{ fontSize: mobile ? 24 : 28, fontWeight: 800, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-        {fmtAUD(filteredExpense)}
+        {fmtMoney(filteredExpense)}
       </div>
     </div>
   ) : null;
@@ -278,8 +279,8 @@ export function TransactionsView({
   // Edit/Delete a transaction carries, so it cannot be mistaken for one — and
   // deliberately outside the month subtotal above it, which counts transactions.
   const adjustmentLabel = (a) => (a.amount < 0 ? "Reconcile · surplus pooled" : "Reconcile · topped up");
-  const adjustmentAmount = (a) => `${a.amount < 0 ? "−" : "+"}${fmtAUD(Math.abs(a.amount))}`;
-  const adjustmentBalances = (a) => `${fmtAUD(a.before)} → ${fmtAUD(a.after)}`;
+  const adjustmentAmount = (a) => `${a.amount < 0 ? "−" : "+"}${fmtMoney(Math.abs(a.amount))}`;
+  const adjustmentBalances = (a) => `${fmtMoney(a.before)} → ${fmtMoney(a.after)}`;
 
   const adjustmentCard = (a) => (
     <div key={`adj-${a.id}`} data-testid={`reconcile-adj-${a.id}`}
@@ -409,8 +410,8 @@ export function TransactionsView({
                   >
                     <span style={{ fontWeight: 700, fontSize: "var(--byb-text-lg)" }}>{formatMonth(g.month)}</span>
                     <span style={{ fontSize: "var(--byb-text-md)", fontVariantNumeric: "tabular-nums", color: styles.textMuted }}>
-                      {g.income > 0 && <span style={{ color: "var(--byb-ok)", fontWeight: 600 }}>+{fmtAUD(g.income)} · </span>}
-                      <span style={{ fontWeight: 700, color: styles.text }} data-testid={`tx-month-total-${g.month}`}>−{fmtAUD(g.expense)}</span>
+                      {g.income > 0 && <span style={{ color: "var(--byb-ok)", fontWeight: 600 }}>+{fmtMoney(g.income)} · </span>}
+                      <span style={{ fontWeight: 700, color: styles.text }} data-testid={`tx-month-total-${g.month}`}>−{fmtMoney(g.expense)}</span>
                     </span>
                   </div>
                 )}
@@ -423,10 +424,11 @@ export function TransactionsView({
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                         <span style={styles.pill(cat?.colour || "#999")}>{cat?.name || "?"}</span>
                         <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: 16, color: t.type === "income" ? "var(--byb-ok)" : styles.text }}>
-                          {t.type === "income" ? "+" : "−"}{fmtAUD(t.amount)}
+                          {t.type === "income" ? "+" : "−"}{fmtMoney(t.amount)}
                         </span>
                       </div>
                       {t.description && <div style={{ fontSize: 14, color: styles.text }}>{t.description}</div>}
+                      {foreignDetail(t) && <div style={{ fontSize: 12, color: styles.textMuted }} data-testid={`tx-foreign-${t.id}`}>{foreignDetail(t)}</div>}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, color: styles.textMuted }}>
                         <span>{t.date}{t.isRecurring && " · recurring"}</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -511,8 +513,8 @@ export function TransactionsView({
                     <tr data-testid={`tx-month-heading-${g.month}`}>
                       <td className="byb-month-heading-cell" style={{ ...styles.td, borderBottom: "none", fontWeight: 700, borderLeft: `4px solid ${PALETTE.primary}` }} colSpan={4}>{formatMonth(g.month)}</td>
                       <td className="byb-month-heading-cell" style={{ ...styles.td, borderBottom: "none", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
-                        {g.income > 0 && <span style={{ color: "var(--byb-ok)", display: "block", fontWeight: 600 }}>+{fmtAUD(g.income)}</span>}
-                        <span data-testid={`tx-month-total-${g.month}`}>−{fmtAUD(g.expense)}</span>
+                        {g.income > 0 && <span style={{ color: "var(--byb-ok)", display: "block", fontWeight: 600 }}>+{fmtMoney(g.income)}</span>}
+                        <span data-testid={`tx-month-total-${g.month}`}>−{fmtMoney(g.expense)}</span>
                       </td>
                       <td className="byb-month-heading-cell" style={{ ...styles.td, borderBottom: "none" }}></td>
                     </tr>
@@ -532,7 +534,8 @@ export function TransactionsView({
                         </td>
                         <td style={styles.td}><span style={{ ...styles.avatarCircle(u || { colour: "#999", name: "?" }), width: 22, height: 22, fontSize: 10 }}>{u?.name[0] || "?"}</span></td>
                         <td style={{ ...styles.td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: t.type === "income" ? "var(--byb-ok)" : styles.text }}>
-                          {t.type === "income" ? "+" : "−"}{fmtAUD(t.amount)}
+                          {t.type === "income" ? "+" : "−"}{fmtMoney(t.amount)}
+                          {foreignDetail(t) && <div style={{ fontSize: 11, fontWeight: 400, color: styles.textMuted }} data-testid={`tx-foreign-${t.id}`}>{foreignDetail(t)}</div>}
                         </td>
                         <td style={{ ...styles.td, textAlign: "right" }}>
                           <button style={styles.buttonGhost} onClick={() => openEdit(t)}>Edit</button>
@@ -567,9 +570,9 @@ export function TransactionsView({
               <tr>
                 <td style={{ ...styles.td, fontWeight: 600 }} colSpan={4}>{hasRange ? "Range total" : "Totals"}</td>
                 <td style={{ ...styles.td, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                  <span style={{ color: "var(--byb-ok)" }}>+{fmtAUD(filteredIncome)}</span>
+                  <span style={{ color: "var(--byb-ok)" }}>+{fmtMoney(filteredIncome)}</span>
                   <br />
-                  <span>−{fmtAUD(filteredExpense)}</span>
+                  <span>−{fmtMoney(filteredExpense)}</span>
                 </td>
                 <td style={styles.td}></td>
               </tr>

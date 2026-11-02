@@ -18,6 +18,17 @@
   From/To period.
 - Transaction descriptions offer tappable suggestions from the household's own
   prior entries; no external prediction service is used.
+- The household currency is now configurable (AUD by default) and an expense
+  can be logged in a foreign currency by recording both the original amount and
+  the main-currency amount actually charged. A main-currency change rewrites
+  every stored amount at the rate the admin enters and records the change.
+- **Deploy the server with the client.** An old server rejects the new
+  `settings`/`currencyHistory` top-level fields, so every save from the new
+  client would fail until the server is updated.
+- **Do not roll the server back to an image built before this release once a
+  document contains `settings` or `currencyHistory`.** The old server rejects
+  those top-level fields, so every save would fail. This is the same rule as the
+  existing warning never to run an old dollar-era image against a cents file.
 
 The v0.7 notes below describe the earlier release. The current upgrade changes
 `budget.json` money values to cents on first server start and retains the exact

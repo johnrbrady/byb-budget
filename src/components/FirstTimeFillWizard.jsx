@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PALETTE } from "../lib/constants.js";
-import { centsToInput, fmtAUD, parseAUDToCents } from "../lib/utils.js";
+import { centsToInput, fmtMoney, parseAUDToCents } from "../lib/utils.js";
+import { getActiveCurrency } from "../lib/currency.js";
 import { IconZap, IconEdit } from "./Icons.jsx";
 
 export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) {
@@ -27,7 +28,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
 
   const overBudgetBanner = (total) => (
     <div style={{ padding: "10px 14px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#B91C1C", fontSize: 13, fontWeight: 500, marginBottom: 12 }}>
-      Oops! You have gone over your monthly budget by {fmtAUD(total - parsedIncome)}. Adjust some amounts to bring it back in line.
+      Oops! You have gone over your monthly budget by {fmtMoney(total - parsedIncome)}. Adjust some amounts to bring it back in line.
     </div>
   );
 
@@ -66,7 +67,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
         <div style={{ fontSize: 12, color: styles.textMuted, marginBottom: 14 }}>Enter your monthly income. We will calculate suggested amounts for each envelope. You can adjust any of them before applying.</div>
 
         <div style={{ marginBottom: 14 }}>
-          <div style={styles.label}>Monthly income ($)</div>
+          <div style={styles.label}>Monthly income ({getActiveCurrency()})</div>
           <input
             style={styles.input} type="number" step="0.01" min="0" inputMode="decimal"
             placeholder="e.g. 8000" value={income} autoFocus
@@ -95,10 +96,10 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
               <span>Total allocated:</span>
-              <span style={{ color: overBudget(autoTotal) ? "var(--byb-over)" : "var(--byb-ok)" }}>{fmtAUD(autoTotal)}</span>
+              <span style={{ color: overBudget(autoTotal) ? "var(--byb-over)" : "var(--byb-ok)" }}>{fmtMoney(autoTotal)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: styles.textMuted, marginBottom: 12 }}>
-              <span>Monthly income:</span><span>{fmtAUD(parsedIncome)}</span>
+              <span>Monthly income:</span><span>{fmtMoney(parsedIncome)}</span>
             </div>
             {overBudget(autoTotal) && overBudgetBanner(autoTotal)}
           </>
@@ -138,7 +139,7 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
           <span style={{ fontWeight: 700, fontSize: 15 }}>{cur.name}</span>
           {cur.isAccumulating && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 99, background: PALETTE.secondary + "55", color: PALETTE.primaryDeep, fontWeight: 700 }}>Saving</span>}
         </div>
-        <div style={styles.label}>Monthly budget amount ($)</div>
+        <div style={styles.label}>Monthly budget amount ({getActiveCurrency()})</div>
         <input
           style={{ ...styles.input, marginBottom: 12 }}
           type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00"
@@ -151,8 +152,8 @@ export function FirstTimeFillWizard({ categories, onComplete, onSkip, styles }) 
           <div style={{ marginBottom: 10 }}>
             {overBudget(manualTotal) ? overBudgetBanner(manualTotal) : (
               <div style={{ fontSize: 12, color: styles.textMuted }}>
-                Allocated so far: {fmtAUD(manualTotal)} of {fmtAUD(parsedIncome)}
-                <span style={{ marginLeft: 6, color: "var(--byb-ok)" }}> ({fmtAUD(parsedIncome - manualTotal)} remaining)</span>
+                Allocated so far: {fmtMoney(manualTotal)} of {fmtMoney(parsedIncome)}
+                <span style={{ marginLeft: 6, color: "var(--byb-ok)" }}> ({fmtMoney(parsedIncome - manualTotal)} remaining)</span>
               </div>
             )}
           </div>
