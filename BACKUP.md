@@ -376,6 +376,10 @@ a stopped household would be passed over in silence while its data went
 unprotected. If a household has genuinely been retired, remove its container and
 the run goes green again.
 
+The one exception is TrueNAS's one-shot `<app>-permissions-<n>` helper. It exits
+after setting folder ownership and holds no household data, so the backup skips
+it whether it is running or stopped.
+
 `byb-restore.sh`
 
 | Code | Meaning |
