@@ -32,6 +32,9 @@ export LC_ALL
 # hard-coded three names, missed ix-byb-aleem, and nobody noticed for months.
 NAME_FILTER="byb"
 
+# TrueNAS one-shot helpers hold no household data, so they aren't instances.
+HELPER_PATTERN='-permissions-[0-9]+$'
+
 # Data lives here inside the container (BYB_DATA_DIR=/data in the Dockerfile).
 CONTAINER_DATA_DIR="/data"
 
@@ -247,11 +250,12 @@ INSTANCES=$(docker ps --filter "name=$NAME_FILTER" --format '{{.Names}}' 2>&1)
 if [ $? -ne 0 ]; then
   die 1 "could not list containers — docker said: $INSTANCES"
 fi
+INSTANCES=$(printf '%s\n' "$INSTANCES" | grep -vE -e "$HELPER_PATTERN")
 
 # Containers that exist but are not running hold data this run did not protect.
 # docker ps only lists running containers, so without this cross-check a stopped
 # household would be skipped in silence.
-ALL_INSTANCES=$(docker ps -a --filter "name=$NAME_FILTER" --format '{{.Names}}' 2>/dev/null)
+ALL_INSTANCES=$(docker ps -a --filter "name=$NAME_FILTER" --format '{{.Names}}' 2>/dev/null | grep -vE -e "$HELPER_PATTERN")
 
 # Zero matching containers is never a legitimate success. Four households run on
 # this host; an empty list means docker is confused, the filter is wrong, or the
